@@ -1,114 +1,120 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
+import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext({});
 
-// Mock users - matching the credentials shown in the login screen
-const MOCK_USERS = {
-  admin: {
-    id: 'mock-admin-uuid-001',
-    email: 'admin@sentimentanalyzer.com',
-    username: 'admin',
-    password: 'admin123',
-    full_name: 'Admin User',
-    role: 'admin',
-    is_active: true,
-  },
-  agent: {
-    id: 'mock-agent-uuid-002',
-    email: 'agent@sentimentanalyzer.com',
-    username: 'agent',
-    password: 'agent123',
-    full_name: 'Agent User',
-    role: 'agent',
-    is_active: true,
-  },
-};
-
-const SESSION_KEY = 'csa_auth_session';
-
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
 
+// ── Map Supabase English errors → Arabic messages ─────────────────────────────
+function toArabicError(msg = '') {
+  if (msg.includes('Invalid login credentials'))  return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+  if (msg.includes('Email not confirmed'))         return 'يرجى تأكيد البريد الإلكتروني أولاً.';
+  if (msg.includes('Too many requests'))           return 'تم تجاوز عدد المحاولات. انتظر قليلاً ثم أعد المحاولة.';
+  if (msg.includes('User not found'))              return 'المستخدم غير موجود.';
+  if (msg.includes('disabled'))                    return 'هذا الحساب معطّل. تواصل مع المسؤول.';
+  return msg;
+}
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user,    setUser]    = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Restore session from localStorage on mount
-    try {
-      const stored = localStorage.getItem(SESSION_KEY);
-      if (stored) {
-        const session = JSON.parse(stored);
-        setUser(session.user);
-        setProfile(session.profile);
-      }
-    } catch (e) {
-      localStorage.removeItem(SESSION_KEY);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // ── Fetch profile from user_profiles ─────────────────────────────────────
+  const fetchProfile = async (userId) => {
+    if (!userId) return null;
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id, email, username, full_name, role, is_active, avatar_url')
+      .eq('id', userId)
+      .single();
 
-  const signIn = async (username, password) => {
-    // Simulate async delay
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const mockUser = MOCK_USERS[username?.toLowerCase()?.trim()];
-
-    if (!mockUser) {
-      throw new Error('اسم المستخدم غير موجود. استخدم: admin أو agent');
+    if (error) {
+      console.warn('Could not fetch user profile:', error.message);
+      return null;
     }
 
-    if (mockUser.password !== password) {
-      throw new Error('كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.');
-    }
-
-    if (!mockUser.is_active) {
+    // Reject inactive users
+    if (data && !data.is_active) {
+      await supabase.auth.signOut();
       throw new Error('هذا الحساب غير نشط. تواصل مع المسؤول.');
     }
 
-    const userObj = {
-      id: mockUser.id,
-      email: mockUser.email,
-      username: mockUser.username,
-    };
-
-    const profileObj = {
-      id: mockUser.id,
-      email: mockUser.email,
-      full_name: mockUser.full_name,
-      role: mockUser.role,
-      is_active: mockUser.is_active,
-    };
-
-    // Persist session
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ user: userObj, profile: profileObj }));
-
-    setUser(userObj);
-    setProfile(profileObj);
-
-    return { user: userObj, profile: profileObj };
+    return data;
   };
 
+  // ── Restore session on mount ──────────────────────────────────────────────
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return;
+      if (session?.user) {
+        setUser(session.user);
+        const prof = await fetchProfile(session.user.id);
+        if (mounted) setProfile(prof);
+      }
+      if (mounted) setLoading(false);
+    });
+
+    // Listen for sign-in / sign-out / token refresh events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!mounted) return;
+
+        if (event === 'SIGNED_IN' && session?.user) {
+          setUser(session.user);
+          const prof = await fetchProfile(session.user.id);
+          if (mounted) setProfile(prof);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setProfile(null);
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          setUser(session.user);
+        }
+
+        if (mounted) setLoading(false);
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []); // eslint-disable-line
+
+  // ── Sign In ───────────────────────────────────────────────────────────────
+  const signIn = async (email, password) => {
+    if (!email?.trim() || !password) {
+      throw new Error('يرجى إدخال البريد الإلكتروني وكلمة المرور.');
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email:    email.trim().toLowerCase(),
+      password,
+    });
+
+    if (error) throw new Error(toArabicError(error.message));
+
+    // Profile is set automatically via onAuthStateChange listener
+    return data;
+  };
+
+  // ── Sign Out ──────────────────────────────────────────────────────────────
   const signOut = async () => {
-    localStorage.removeItem(SESSION_KEY);
-    setUser(null);
-    setProfile(null);
+    await supabase.auth.signOut();
+    // State cleared by onAuthStateChange listener
   };
 
-  const value = {
-    user,
-    profile,
-    loading,
-    signIn,
-    signOut,
-  };
+  const value = { user, profile, loading, signIn, signOut };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 };

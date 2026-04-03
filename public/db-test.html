@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supabase Connection Test</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 32px; }
+  h1 { font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .subtitle { color: #64748b; font-size: 0.875rem; margin-bottom: 32px; }
+  .card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 16px; }
+  .test-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2d3748; }
+  .test-row:last-child { border-bottom: none; }
+  .test-label { font-size: 0.875rem; color: #cbd5e1; }
+  .badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+  .badge-waiting  { background: #334155; color: #94a3b8; }
+  .badge-ok       { background: #064e3b; color: #34d399; }
+  .badge-error    { background: #450a0a; color: #f87171; }
+  .badge-empty    { background: #1e293b; color: #f59e0b; }
+  .detail { font-size: 0.75rem; color: #64748b; margin-top: 4px; font-family: monospace; word-break: break-all; }
+  .detail.error-text { color: #f87171; }
+  .run-btn { background: #3b82f6; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; margin-bottom: 24px; transition: background 0.2s; }
+  .run-btn:hover { background: #2563eb; }
+  .run-btn:disabled { background: #334155; cursor: not-allowed; }
+  .summary { padding: 16px; border-radius: 8px; margin-top: 8px; font-size: 0.875rem; font-weight: 600; }
+  .summary.success { background: #064e3b; color: #34d399; }
+  .summary.partial { background: #451a03; color: #fb923c; }
+  .summary.fail    { background: #450a0a; color: #f87171; }
+  pre { background: #0f172a; padding: 12px; border-radius: 6px; font-size: 0.75rem; color: #94a3b8; overflow: auto; max-height: 200px; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>🔌 Supabase Connection Test</h1>
+<p class="subtitle">Customer Sentiment Analyzer — Database connectivity check</p>
+
+<div id="config-card" class="card">
+  <h2>📋 Configuration</h2>
+  <div class="test-row">
+    <span class="test-label">Supabase URL</span>
+    <span class="badge badge-ok" id="url-badge">Reading…</span>
+  </div>
+  <div class="detail" id="url-detail"></div>
+  <div class="test-row">
+    <span class="test-label">Anon Key</span>
+    <span class="badge badge-ok" id="key-badge">Reading…</span>
+  </div>
+  <div class="detail" id="key-detail"></div>
+</div>
+
+<button class="run-btn" id="run-btn" onclick="runTests()">▶ Run All Tests</button>
+
+<div id="tests-card" class="card" style="display:none">
+  <h2>🧪 Table Connectivity Tests</h2>
+  <div id="tests-container"></div>
+</div>
+
+<div id="data-card" class="card" style="display:none">
+  <h2>📊 Data Counts</h2>
+  <div id="data-container"></div>
+</div>
+
+<div id="summary-div" style="display:none"></div>
+
+<script>
+// ── Config ─────────────────────────────────────────────────────────
+const SUPABASE_URL     = 'https://jyuacntxiydctygsmtdc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp5dWFjbnR4aXlkY3R5Z3NtdGRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDA4OTUsImV4cCI6MjA4MDg3Njg5NX0.xFLOwhY7s-ZErdjLeUtIQyfbQ30FwNFdgS7PVr7BFVk';
+
+// Show config
+document.getElementById('url-detail').textContent = SUPABASE_URL;
+document.getElementById('url-badge').textContent   = SUPABASE_URL ? '✓ Set' : '✗ Missing';
+document.getElementById('url-badge').className     = 'badge ' + (SUPABASE_URL ? 'badge-ok' : 'badge-error');
+document.getElementById('key-detail').textContent  = SUPABASE_ANON_KEY ? SUPABASE_ANON_KEY.substring(0, 40) + '…' : 'MISSING';
+document.getElementById('key-badge').textContent   = SUPABASE_ANON_KEY ? '✓ Set' : '✗ Missing';
+document.getElementById('key-badge').className     = 'badge ' + (SUPABASE_ANON_KEY ? 'badge-ok' : 'badge-error');
+
+// Init Supabase
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── Tables to test ─────────────────────────────────────────────────
+const TABLES = [
+  { name: 'user_profiles',         label: 'User Profiles'         },
+  { name: 'departments',           label: 'Departments'           },
+  { name: 'agents',                label: 'Agents'                },
+  { name: 'customers',             label: 'Customers'             },
+  { name: 'call_recordings',       label: 'Call Recordings'       },
+  { name: 'topics',                label: 'Topics'                },
+  { name: 'keywords',              label: 'Keywords'              },
+  { name: 'qa_criteria',           label: 'QA Criteria'           },
+  { name: 'processing_queue',      label: 'Processing Queue'      },
+  { name: 'sentiment_timeline',    label: 'Sentiment Timeline'    },
+  { name: 'sentiment_distribution',label: 'Sentiment Distribution'},
+  { name: 'sentiment_heatmap',     label: 'Sentiment Heatmap'     },
+  { name: 'kpi_snapshots',         label: 'KPI Snapshots'         },
+  { name: 'performance_metrics',   label: 'Performance Metrics'   },
+  { name: 'system_health_metrics', label: 'System Health Metrics' },
+  { name: 'alerts',                label: 'Alerts'                },
+  { name: 'trend_alerts',          label: 'Trend Alerts'          },
+  { name: 'topic_frequency',       label: 'Topic Frequency'       },
+];
+
+const VIEWS = [
+  { name: 'vw_dashboard_kpis',      label: 'View: Dashboard KPIs'      },
+  { name: 'vw_live_activity_feed',  label: 'View: Live Activity Feed'   },
+  { name: 'vw_agent_performance',   label: 'View: Agent Performance'    },
+  { name: 'vw_customer_insights',   label: 'View: Customer Insights'    },
+];
+
+function setBadge(el, status, text) {
+  el.textContent = text;
+  el.className   = 'badge badge-' + status;
+}
+
+async function testTable(name) {
+  try {
+    const { data, error, count } = await sb
+      .from(name)
+      .select('*', { count: 'exact', head: true });
+    if (error) return { ok: false, count: 0, error: error.message };
+    return { ok: true, count: count ?? 0, error: null };
+  } catch(e) {
+    return { ok: false, count: 0, error: e.message };
+  }
+}
+
+async function runTests() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Testing…';
+
+  document.getElementById('tests-card').style.display = 'block';
+  document.getElementById('data-card').style.display  = 'block';
+
+  const testsContainer = document.getElementById('tests-container');
+  const dataContainer  = document.getElementById('data-container');
+  testsContainer.innerHTML = '';
+  dataContainer.innerHTML  = '';
+
+  let passed = 0, failed = 0, empty = 0;
+  const all  = [...TABLES, ...VIEWS];
+
+  for (const item of all) {
+    // Create row
+    const row = document.createElement('div');
+    row.className = 'test-row';
+    row.innerHTML = `<div>
+      <div class="test-label">${item.label}</div>
+      <div class="detail" id="detail-${item.name}"></div>
+    </div>
+    <span class="badge badge-waiting" id="badge-${item.name}">Testing…</span>`;
+    testsContainer.appendChild(row);
+
+    const result = await testTable(item.name);
+    const badge  = document.getElementById(`badge-${item.name}`);
+    const detail = document.getElementById(`detail-${item.name}`);
+
+    if (!result.ok) {
+      setBadge(badge, 'error', '✗ Error');
+      detail.textContent = result.error;
+      detail.className   = 'detail error-text';
+      failed++;
+    } else if (result.count === 0) {
+      setBadge(badge, 'empty', '⚠ Empty (0 rows)');
+      detail.textContent = 'Table exists but has no data';
+      empty++;
+    } else {
+      setBadge(badge, 'ok', `✓ ${result.count} rows`);
+      passed++;
+    }
+  }
+
+  // Summary
+  const summaryDiv = document.getElementById('summary-div');
+  summaryDiv.style.display = 'block';
+  const totalTables = all.length;
+  const cls = failed > 0 ? 'fail' : empty > 5 ? 'partial' : 'success';
+  const msg = failed > 0
+    ? `❌ ${failed} tables failed — migrations may not have run correctly`
+    : empty > 5
+    ? `⚠ ${empty} tables are empty — run migrations to seed data`
+    : `✅ All ${passed} tables connected successfully!`;
+
+  summaryDiv.innerHTML = `<div class="summary ${cls}">${msg}</div>`;
+
+  // Data counts card (important ones only)
+  const important = ['customers','kpi_snapshots','sentiment_timeline','sentiment_heatmap','agents','topics'];
+  for (const t of important) {
+    const { count } = await sb.from(t).select('*', { count: 'exact', head: true });
+    const row = document.createElement('div');
+    row.className = 'test-row';
+    row.innerHTML = `<span class="test-label">${t}</span><span class="badge ${count > 0 ? 'badge-ok' : 'badge-empty'}">${count ?? 0} rows</span>`;
+    dataContainer.appendChild(row);
+  }
+
+  btn.disabled   = false;
+  btn.textContent = '↺ Run Again';
+}
+</script>
+</body>
+</html>
