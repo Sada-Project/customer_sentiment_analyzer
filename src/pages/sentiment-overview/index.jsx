@@ -119,8 +119,8 @@ const SentimentOverview = () => {
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            {kpiData.map((kpi, index) => (
-              <KPICard key={index} {...kpi} />
+            {kpiData.map((kpi) => (
+              <KPICard key={kpi.title} {...kpi} />
             ))}
           </div>
 

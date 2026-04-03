@@ -8,7 +8,7 @@ const UserModal = ({ user, onSave, onClose }) => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: 'Agent',
+    role: 'agent',
     password: '',
     confirmPassword: ''
   });
@@ -20,7 +20,7 @@ const UserModal = ({ user, onSave, onClose }) => {
       setFormData({
         name: user?.name || '',
         email: user?.email || '',
-        role: user?.role || 'Agent',
+        role: user?.role?.toLowerCase() || 'agent',
         password: '',
         confirmPassword: ''
       });
@@ -143,9 +143,8 @@ const UserModal = ({ user, onSave, onClose }) => {
               onChange={handleChange}
               className="w-full bg-slate-900 border-slate-700 text-white"
             >
-              <option value="Admin">Admin</option>
-              <option value="Supervisor">Supervisor</option>
-              <option value="Agent">Agent</option>
+              <option value="admin">Admin</option>
+              <option value="agent">Agent</option>
             </Select>
           </div>
 

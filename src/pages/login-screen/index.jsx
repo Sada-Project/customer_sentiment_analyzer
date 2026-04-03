@@ -21,7 +21,8 @@ const LoginScreen = () => {
 
     try {
       await signIn(email, password);
-      navigate('/sentiment-overview');
+      // Navigate to root — RoleBasedRedirect will send user to correct page
+      navigate('/');
     } catch (err) {
       setError(err?.message || 'فشل تسجيل الدخول. يرجى التحقق من بياناتك.');
     } finally {

@@ -76,7 +76,9 @@ const CustomerInsights = () => {
   const metricsData = metrics.length > 0
     ? metrics.map(row => ({
         title:      row.metric_label,
-        value:      row.metric_unit === '%' ? `${Number(row.metric_value).toFixed(1)}%` : `${Number(row.metric_value).toFixed(1)}%`,
+        value:      row.metric_unit === '%'
+          ? `${Number(row.metric_value).toFixed(1)}%`
+          : Number(row.metric_value).toLocaleString(),
         change:     row.change_value != null ? `${row.change_value > 0 ? '+' : ''}${Number(row.change_value).toFixed(1)}%` : '—',
         changeType: row.change_type ?? 'neutral',
         icon:       row.metric_key === 'satisfaction_trend' ? 'Heart' : 'TrendingUp',
@@ -111,7 +113,7 @@ const CustomerInsights = () => {
           <FilterPanel filters={filters} onFilterChange={handleFilterChange} onApplyFilters={handleApplyFilters} onResetFilters={handleResetFilters} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {metricsData.map((metric, index) => <MetricCard key={index} {...metric} />)}
+            {metricsData.map((metric) => <MetricCard key={metric.title} {...metric} />)}
           </div>
 
           <div className="mb-6">

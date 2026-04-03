@@ -25,7 +25,7 @@ const AgentPerformanceCards = () => {
     setError(null);
 
     Promise.all([
-      fetchAgents({ department: selectedDepartment, search: searchTerm }),
+      fetchAgents({ department: selectedDepartment }), // search handled client-side
       fetchAgentStats(),
     ])
       .then(([agentList, agentStats]) => {
@@ -37,7 +37,7 @@ const AgentPerformanceCards = () => {
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, [selectedDepartment, searchTerm]);
+  }, [selectedDepartment]); // ← removed searchTerm: search is client-side only
 
   // Client-side search filter on top of DB data
   const filteredAgents = useMemo(() => {

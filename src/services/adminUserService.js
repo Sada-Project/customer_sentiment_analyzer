@@ -44,18 +44,13 @@ export async function updateUser(userId, updates) {
 }
 
 // ─── Invite / create user via Supabase Auth ───────────────────────────────────
+// NOTE: Creating auth users requires the service_role key (server-side only).
+// This function should be called from a secure backend endpoint / Supabase Edge Function.
+// Using the anon key here will always fail with a "not authorized" error.
 export async function inviteUser({ email, full_name, role }) {
-  // Uses admin API — requires service_role key on backend
-  // For now we insert directly into user_profiles after auth signup
-  // This is a placeholder; real invite uses supabase.auth.admin.inviteUserByEmail()
-  const { data, error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      data: { full_name, role },
-      shouldCreateUser: true,
-    },
-  });
-
-  if (error) throw error;
-  return data;
+  // Throw a descriptive error to surface the limitation clearly in the UI
+  throw new Error(
+    'إنشاء مستخدمين جدد يتطلب مفتاح service_role ويجب تنفيذه من الـ backend. ' +
+    'يرجى إنشاء الحساب يدوياً في Supabase Dashboard ثم تحديث ملف user_profiles.'
+  );
 }

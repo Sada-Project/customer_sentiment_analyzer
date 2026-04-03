@@ -11,18 +11,25 @@ const RecordingInterface = ({ onRecordingComplete }) => {
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animationRef = useRef(null);
+  const streamRef = useRef(null); // ← keep track of MediaStream to stop it properly
 
   useEffect(() => {
     return () => {
       if (timerRef?.current) clearInterval(timerRef?.current);
       if (animationRef?.current) cancelAnimationFrame(animationRef?.current);
       if (audioContextRef?.current) audioContextRef?.current?.close();
+      // Stop microphone track so browser recording indicator disappears
+      if (streamRef?.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
     };
   }, []);
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
+      streamRef.current = stream; // ← save stream reference
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       analyserRef.current = audioContextRef?.current?.createAnalyser();
       const source = audioContextRef?.current?.createMediaStreamSource(stream);
@@ -74,6 +81,11 @@ const RecordingInterface = ({ onRecordingComplete }) => {
     if (timerRef?.current) clearInterval(timerRef?.current);
     if (animationRef?.current) cancelAnimationFrame(animationRef?.current);
     if (audioContextRef?.current) audioContextRef?.current?.close();
+    // ← Stop the microphone so browser recording indicator disappears
+    if (streamRef?.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
 
     const mockRecording = {
       id: `rec_${Date.now()}`,

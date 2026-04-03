@@ -2,6 +2,12 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
+// Default pages per role when access is denied
+const ROLE_DEFAULT_PATHS = {
+  admin: '/sentiment-overview',
+  agent: '/voice-analysis-hub',
+};
+
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
@@ -22,11 +28,12 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   }
 
   if (allowedRoles?.length > 0 && !allowedRoles?.includes(profile?.role)) {
-    // Redirect agent to their default page if trying to access restricted route
-    return <Navigate to="/voice-analysis-hub" replace />;
+    // Redirect to the user's default page based on their role
+    const fallback = ROLE_DEFAULT_PATHS[profile?.role] ?? '/voice-analysis-hub';
+    return <Navigate to={fallback} replace />;
   }
 
   return children;
 };
 
-export default ProtectedRoute;
+export default ProtectedRoute;

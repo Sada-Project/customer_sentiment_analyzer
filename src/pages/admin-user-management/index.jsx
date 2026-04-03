@@ -1,9 +1,53 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Header from '../../components/ui/Header';
 import ActionToolbar from './components/ActionToolbar';
 import UserTable from './components/UserTable';
 import UserModal from './components/UserModal';
 import { fetchUsers, toggleUserStatus, updateUser } from '../../services/adminUserService';
+
+// ── Simple Toast notification ─────────────────────────────────────────────────
+const Toast = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+
+  const colors = {
+    success: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
+    error:   'bg-destructive/10 border-destructive/30 text-destructive',
+    info:    'bg-primary/10 border-primary/30 text-primary',
+  };
+
+  return (
+    <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 border rounded-lg shadow-lg ${colors[type] ?? colors.info} animate-in slide-in-from-bottom-2`}>
+      <span className="text-sm font-medium">{message}</span>
+      <button onClick={onClose} className="opacity-70 hover:opacity-100 text-lg leading-none">×</button>
+    </div>
+  );
+};
+
+// ── Confirmation Dialog ───────────────────────────────────────────────────────
+const ConfirmDialog = ({ message, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full shadow-xl mx-4">
+      <p className="text-foreground text-sm mb-6">{message}</p>
+      <div className="flex gap-3 justify-end">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 text-sm rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors"
+        >
+          إلغاء
+        </button>
+        <button
+          onClick={onConfirm}
+          className="px-4 py-2 text-sm rounded-md bg-destructive text-white hover:bg-destructive/90 transition-colors"
+        >
+          تأكيد
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 const AdminUserManagement = () => {
   const [searchTerm,    setSearchTerm]    = useState('');
@@ -13,23 +57,32 @@ const AdminUserManagement = () => {
   const [users,         setUsers]         = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState(null);
+  const [toast,         setToast]         = useState(null);
+  const [confirm,       setConfirm]       = useState(null); // { message, onConfirm }
 
-  const loadUsers = async () => {
+  const showToast = (message, type = 'info') => setToast({ message, type });
+  const hideToast = () => setToast(null);
+
+  // ── Fetch users ─────────────────────────────────────────────────────────────
+  const loadUsers = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchUsers({ search: searchTerm || undefined, role: selectedRole !== 'all' ? selectedRole : undefined });
+      const data = await fetchUsers({
+        search: searchTerm || undefined,
+        role: selectedRole !== 'all' ? selectedRole : undefined,
+      });
       setUsers(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, selectedRole]);
 
-  useEffect(() => { loadUsers(); }, [searchTerm, selectedRole]); // eslint-disable-line
+  useEffect(() => { loadUsers(); }, [loadUsers]);
 
-  // Client-side filter for instant search feel
+  // ── Client-side filter for instant search feedback ──────────────────────────
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
       const matchesSearch =
@@ -46,16 +99,27 @@ const AdminUserManagement = () => {
   const handleAddUser    = ()     => { setSelectedUser(null); setIsModalOpen(true); };
   const handleEditUser   = (user) => { setSelectedUser(user); setIsModalOpen(true); };
 
-  const handleDeleteUser = async (userId) => {
-    if (!window.confirm('Are you sure you want to deactivate this user?')) return;
-    try {
-      await updateUser(userId, { is_active: false });
-      setUsers(prev => prev.filter(u => u.id !== userId));
-    } catch (err) {
-      alert(`Error: ${err.message}`);
-    }
+  // ── Deactivate user (does NOT remove from list — marks as inactive) ─────────
+  const handleDeleteUser = (userId) => {
+    setConfirm({
+      message: 'هل أنت متأكد؟ سيتم تعطيل هذا الحساب.',
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          await updateUser(userId, { is_active: false });
+          // Update in-place: mark inactive, don't remove from list
+          setUsers(prev => prev.map(u =>
+            u.id === userId ? { ...u, is_active: false } : u
+          ));
+          showToast('تم تعطيل المستخدم بنجاح.', 'success');
+        } catch (err) {
+          showToast(`خطأ: ${err.message}`, 'error');
+        }
+      },
+    });
   };
 
+  // ── Toggle active / inactive ────────────────────────────────────────────────
   const handleToggleStatus = async (userId) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
@@ -64,34 +128,48 @@ const AdminUserManagement = () => {
       setUsers(prev => prev.map(u =>
         u.id === userId ? { ...u, is_active: !u.is_active } : u
       ));
+      showToast(
+        target.is_active ? 'تم تعطيل المستخدم.' : 'تم تفعيل المستخدم.',
+        'success'
+      );
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      showToast(`خطأ: ${err.message}`, 'error');
     }
   };
 
+  // ── Save user (create or update) ────────────────────────────────────────────
   const handleSaveUser = async (userData) => {
     try {
       if (selectedUser) {
         await updateUser(selectedUser.id, userData);
-        setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, ...userData } : u));
+        setUsers(prev => prev.map(u =>
+          u.id === selectedUser.id ? { ...u, ...userData } : u
+        ));
+        showToast('تم تحديث بيانات المستخدم.', 'success');
       } else {
-        // New user — optimistic UI, real creation needs backend
-        const newUser = { id: `temp-${Date.now()}`, ...userData, is_active: true, created_at: new Date().toISOString() };
+        // New user — optimistic UI; real creation requires backend/admin SDK
+        const newUser = {
+          id: `temp-${Date.now()}`,
+          ...userData,
+          is_active: true,
+          created_at: new Date().toISOString(),
+        };
         setUsers(prev => [newUser, ...prev]);
+        showToast('تم إضافة المستخدم (يجب إنشاء الحساب في Supabase Auth).', 'info');
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      showToast(`خطأ: ${err.message}`, 'error');
     } finally {
       setIsModalOpen(false);
     }
   };
 
-  // Adapt DB shape to what UserTable expects
+  // ── Adapt DB shape to what UserTable expects ────────────────────────────────
   const tableUsers = filteredUsers.map(u => ({
     id:         u.id,
     name:       u.full_name,
     email:      u.email,
-    role:       u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Agent',
+    role:       u.role ?? 'agent',          // keep lowercase for consistency
     status:     u.is_active ? 'active' : 'inactive',
     lastActive: u.last_login ? new Date(u.last_login).toLocaleString() : 'Never',
     avatar:     `https://i.pravatar.cc/150?u=${u.email}`,
@@ -105,8 +183,8 @@ const AdminUserManagement = () => {
 
           <div className="mb-6 flex items-start justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-foreground mb-2 font-['Inter']">User Management</h1>
-              <p className="text-muted-foreground font-['Inter']">Manage access and roles</p>
+              <h1 className="text-3xl font-bold text-foreground mb-2">User Management</h1>
+              <p className="text-muted-foreground">Manage access and roles</p>
             </div>
             <div className="flex items-center gap-2 mt-2">
               {loading && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
@@ -126,8 +204,24 @@ const AdminUserManagement = () => {
       </main>
 
       {isModalOpen && (
-        <UserModal user={selectedUser} onSave={handleSaveUser} onClose={() => { setIsModalOpen(false); setSelectedUser(null); }} />
+        <UserModal
+          user={selectedUser}
+          onSave={handleSaveUser}
+          onClose={() => { setIsModalOpen(false); setSelectedUser(null); }}
+        />
       )}
+
+      {/* Confirmation Dialog */}
+      {confirm && (
+        <ConfirmDialog
+          message={confirm.message}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+
+      {/* Toast Notification */}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
     </>
   );
 };

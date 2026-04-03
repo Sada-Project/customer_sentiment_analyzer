@@ -4,11 +4,11 @@ import Icon from '../../../components/AppIcon';
 const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
   const getRoleBadgeColor = (role) => {
     const colors = {
-      Admin: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-      Supervisor: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-      Agent: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+      admin:      'bg-purple-500/20 text-purple-400 border-purple-500/30',
+      agent:      'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+      supervisor: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
     };
-    return colors?.[role] || 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+    return colors?.[role?.toLowerCase()] || 'bg-slate-500/20 text-slate-400 border-slate-500/30';
   };
 
   return (
@@ -91,9 +91,9 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
                         <Icon name="Edit" size={18} />
                       </button>
                       <button
-                        onClick={() => onDelete?.(user?.id)}
+                        onClick={() => onDelete?.(user)}
                         className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
-                        title="Delete User"
+                        title="Deactivate User"
                       >
                         <Icon name="Trash2" size={18} />
                       </button>

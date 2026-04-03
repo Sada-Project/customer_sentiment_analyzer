@@ -86,14 +86,14 @@ const VoiceAnalysisHub = () => {
     const analysis = {
       id:             completedItem.id,
       fileName:       completedItem.file_name ?? completedItem.fileName,
-      sentiment:      completedItem.sentiment ?? 'Neutral',
-      sentimentScore: completedItem.sentiment_score ?? Math.floor(Math.random() * 40 + 50),
+      sentiment:      completedItem.sentiment ?? 'Pending',
+      sentimentScore: completedItem.sentiment_score ?? 0,
       completedAt:    new Date(),
       duration:       completedItem.duration_seconds
         ? `${Math.floor(completedItem.duration_seconds / 60)}:${String(completedItem.duration_seconds % 60).padStart(2, '0')}`
         : '0:00',
-      confidence:     completedItem.sentiment_confidence ?? Math.floor(Math.random() * 15 + 85),
-      transcript:     'Transcript generated from audio analysis. Connect your AI processing pipeline to populate this field.',
+      confidence:     completedItem.sentiment_confidence ?? 0,
+      transcript:     'Transcript will be available after AI processing completes.',
     };
 
     setCompletedAnalyses(prev => [analysis, ...prev]);
