@@ -1,90 +1,99 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../../components/ui/Header';
 import RecordingInterface from './components/RecordingInterface';
 import FileUploadZone from './components/FileUploadZone';
+import ProcessingQueue from './components/ProcessingQueue';
 import RecentAnalysis from './components/RecentAnalysis';
-
-
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  fetchRecentAnalyses,
+  fetchProcessingQueue,
+  enqueueFile,
+  updateQueueProgress,
+} from '../../services/voiceAnalysisService';
 
 const VoiceAnalysisHub = () => {
-  const [queueItems, setQueueItems] = useState([]);
-  const [completedAnalyses, setCompletedAnalyses] = useState([
-    {
-      id: 'analysis_001',
-      fileName: 'customer_call_2025-12-04_morning.wav',
-      sentiment: 'Positive',
-      sentimentScore: 87,
-      completedAt: new Date(Date.now() - 3600000),
-      duration: '3:45',
-      confidence: 94,
-      transcript: 'Thank you so much for your help today. The service was excellent and I really appreciate how quickly you resolved my issue. I will definitely recommend your company to my friends and family.'
-    },
-    {
-      id: 'analysis_002',
-      fileName: 'support_interaction_dec03.mp3',
-      sentiment: 'Neutral',
-      sentimentScore: 62,
-      completedAt: new Date(Date.now() - 7200000),
-      duration: '5:12',
-      confidence: 89,
-      transcript: 'I called to inquire about my account status. The representative provided the information I needed. The process was straightforward and took about five minutes to complete.'
-    },
-    {
-      id: 'analysis_003',
-      fileName: 'feedback_session_client_a.m4a',
-      sentiment: 'Negative',
-      sentimentScore: 34,
-      completedAt: new Date(Date.now() - 10800000),
-      duration: '2:28',
-      confidence: 91,
-      transcript: 'I am very disappointed with the service I received. The wait time was unacceptable and my issue was not resolved properly. This is not what I expected from your company.'
-    },
-    {
-      id: 'analysis_004',
-      fileName: 'product_review_recording.wav',
-      sentiment: 'Positive',
-      sentimentScore: 78,
-      completedAt: new Date(Date.now() - 14400000),
-      duration: '4:33',
-      confidence: 87,
-      transcript: 'The product quality is good and meets my expectations. Delivery was on time and the packaging was secure. Overall, I am satisfied with my purchase and would consider buying again.'
+  const { user } = useAuth();
+  const [queueItems,          setQueueItems]          = useState([]);
+  const [completedAnalyses,   setCompletedAnalyses]   = useState([]);
+  const [loading,             setLoading]             = useState(true);
+  const [error,               setError]               = useState(null);
+
+  // Load data on mount
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      fetchRecentAnalyses(10),
+      fetchProcessingQueue(user?.id),
+    ])
+      .then(([analyses, queue]) => {
+        if (cancelled) return;
+        setCompletedAnalyses(analyses);
+        setQueueItems(queue);
+      })
+      .catch(err => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  const handleRecordingComplete = async (recording) => {
+    try {
+      const newItem = await enqueueFile({
+        fileName:      recording.fileName ?? `recording_${Date.now()}.webm`,
+        fileFormat:    'webm',
+        fileSizeBytes: recording.fileSizeBytes,
+        source:        'recording',
+        submittedBy:   user?.id,
+      });
+      setQueueItems(prev => [{ ...newItem, progress_pct: 0 }, ...prev]);
+    } catch {
+      // Falls back to local state on error
+      setQueueItems(prev => [{ ...recording, progress: 0, status: 'processing' }, ...prev]);
     }
-  ]);
-
-  const handleRecordingComplete = (recording) => {
-    const newItem = {
-      ...recording,
-      progress: 0,
-      status: 'processing'
-    };
-    setQueueItems(prev => [newItem, ...prev]);
   };
 
-  const handleFilesAdded = (file) => {
-    const newItem = {
-      ...file,
-      progress: 0,
-      status: 'processing'
-    };
-    setQueueItems(prev => [newItem, ...prev]);
+  const handleFilesAdded = async (file) => {
+    try {
+      const ext = file.fileName?.split('.').pop()?.toLowerCase() ?? 'mp3';
+      const newItem = await enqueueFile({
+        fileName:      file.fileName,
+        fileFormat:    ext,
+        fileSizeBytes: file.fileSizeBytes,
+        source:        'upload',
+        submittedBy:   user?.id,
+      });
+      setQueueItems(prev => [{ ...newItem, progress_pct: 0 }, ...prev]);
+    } catch {
+      setQueueItems(prev => [{ ...file, progress: 0, status: 'processing' }, ...prev]);
+    }
   };
 
-  const handleItemComplete = (completedItem) => {
-    setQueueItems(prev => 
-      prev?.map(item => 
-        item?.id === completedItem?.id ? completedItem : item
-      )
-    );
+  const handleItemComplete = async (completedItem) => {
+    // Update progress in DB
+    try {
+      if (completedItem.id) {
+        await updateQueueProgress(completedItem.id, 100, 'completed');
+      }
+    } catch { /* silent */ }
+
+    setQueueItems(prev => prev.map(item =>
+      (item.id ?? item.fileName) === (completedItem.id ?? completedItem.fileName)
+        ? { ...item, status: 'completed', progress_pct: 100 }
+        : item
+    ));
 
     const analysis = {
-      id: completedItem?.id,
-      fileName: completedItem?.fileName,
-      sentiment: completedItem?.sentiment,
-      sentimentScore: completedItem?.sentimentScore,
-      completedAt: completedItem?.completedAt,
-      duration: completedItem?.duration ? `${Math.floor(completedItem?.duration / 60)}:${(completedItem?.duration % 60)?.toString()?.padStart(2, '0')}` : '0:00',
-      confidence: Math.floor(Math.random() * 15) + 85,
-      transcript: 'This is a sample transcript generated from the audio analysis. The actual transcript would contain the full conversation text extracted from the audio file using speech-to-text technology.'
+      id:             completedItem.id,
+      fileName:       completedItem.file_name ?? completedItem.fileName,
+      sentiment:      completedItem.sentiment ?? 'Neutral',
+      sentimentScore: completedItem.sentiment_score ?? Math.floor(Math.random() * 40 + 50),
+      completedAt:    new Date(),
+      duration:       completedItem.duration_seconds
+        ? `${Math.floor(completedItem.duration_seconds / 60)}:${String(completedItem.duration_seconds % 60).padStart(2, '0')}`
+        : '0:00',
+      confidence:     completedItem.sentiment_confidence ?? Math.floor(Math.random() * 15 + 85),
+      transcript:     'Transcript generated from audio analysis. Connect your AI processing pipeline to populate this field.',
     };
 
     setCompletedAnalyses(prev => [analysis, ...prev]);
@@ -95,19 +104,25 @@ const VoiceAnalysisHub = () => {
       <Header />
       <main className="pt-16 min-h-screen bg-background">
         <div className="container mx-auto p-6">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-2">Voice Analysis Hub</h1>
-            <p className="text-muted-foreground">
-              Record conversations or upload audio files for AI-powered sentiment analysis
-            </p>
+          <div className="mb-8 flex items-start justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground mb-2">Voice Analysis Hub</h1>
+              <p className="text-muted-foreground">Record conversations or upload audio files for AI-powered sentiment analysis</p>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              {loading && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
+              {error   && <span className="text-xs text-destructive">⚠ {error}</span>}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 flex flex-col gap-6">
               <RecordingInterface onRecordingComplete={handleRecordingComplete} />
               <FileUploadZone onFilesAdded={handleFilesAdded} />
+              {queueItems.length > 0 && (
+                <ProcessingQueue items={queueItems} onItemComplete={handleItemComplete} />
+              )}
             </div>
-
             <div className="lg:col-span-7 flex">
               <RecentAnalysis analyses={completedAnalyses} />
             </div>

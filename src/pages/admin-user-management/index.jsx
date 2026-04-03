@@ -1,200 +1,132 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Header from '../../components/ui/Header';
 import ActionToolbar from './components/ActionToolbar';
 import UserTable from './components/UserTable';
 import UserModal from './components/UserModal';
+import { fetchUsers, toggleUserStatus, updateUser } from '../../services/adminUserService';
 
 const AdminUserManagement = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRole, setSelectedRole] = useState('all');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [searchTerm,    setSearchTerm]    = useState('');
+  const [selectedRole,  setSelectedRole]  = useState('all');
+  const [isModalOpen,   setIsModalOpen]   = useState(false);
+  const [selectedUser,  setSelectedUser]  = useState(null);
+  const [users,         setUsers]         = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState(null);
 
-  // Mock users data
-  const [users, setUsers] = useState([
-    {
-      id: 1,
-      name: 'Sarah Mitchell',
-      email: 'sarah.mitchell@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=1',
-      role: 'Agent',
-      status: 'active',
-      lastActive: '2 hours ago'
-    },
-    {
-      id: 2,
-      name: 'Michael Chen',
-      email: 'michael.chen@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=12',
-      role: 'Agent',
-      status: 'active',
-      lastActive: '5 minutes ago'
-    },
-    {
-      id: 3,
-      name: 'Emily Rodriguez',
-      email: 'emily.rodriguez@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=5',
-      role: 'Agent',
-      status: 'active',
-      lastActive: '1 hour ago'
-    },
-    {
-      id: 4,
-      name: 'James Thompson',
-      email: 'james.thompson@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=13',
-      role: 'Agent',
-      status: 'inactive',
-      lastActive: '2 days ago'
-    },
-    {
-      id: 5,
-      name: 'Lisa Anderson',
-      email: 'lisa.anderson@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=9',
-      role: 'Agent',
-      status: 'active',
-      lastActive: '30 minutes ago'
-    },
-    {
-      id: 6,
-      name: 'David Park',
-      email: 'david.park@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=14',
-      role: 'Agent',
-      status: 'active',
-      lastActive: '3 hours ago'
-    },
-    {
-      id: 7,
-      name: 'Jennifer White',
-      email: 'jennifer.white@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=10',
-      role: 'Agent',
-      status: 'active',
-      lastActive: '15 minutes ago'
-    },
-    {
-      id: 8,
-      name: 'Robert Taylor',
-      email: 'robert.taylor@company.com',
-      avatar: 'https://i.pravatar.cc/150?img=15',
-      role: 'Agent',
-      status: 'inactive',
-      lastActive: '1 week ago'
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchUsers({ search: searchTerm || undefined, role: selectedRole !== 'all' ? selectedRole : undefined });
+      setUsers(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
 
-  // Filter users based on search and role
+  useEffect(() => { loadUsers(); }, [searchTerm, selectedRole]); // eslint-disable-line
+
+  // Client-side filter for instant search feel
   const filteredUsers = useMemo(() => {
-    return users?.filter((user) => {
-      const matchesSearch = 
-        user?.name?.toLowerCase()?.includes(searchTerm?.toLowerCase()) ||
-        user?.email?.toLowerCase()?.includes(searchTerm?.toLowerCase());
-      const matchesRole = selectedRole === 'all' || user?.role === selectedRole;
+    return users.filter(u => {
+      const matchesSearch =
+        !searchTerm ||
+        u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesRole = selectedRole === 'all' || u.role === selectedRole;
       return matchesSearch && matchesRole;
     });
   }, [users, searchTerm, selectedRole]);
 
-  const handleSearch = (term) => {
-    setSearchTerm(term);
-  };
+  const handleSearch     = (term) => setSearchTerm(term);
+  const handleRoleFilter = (role) => setSelectedRole(role);
+  const handleAddUser    = ()     => { setSelectedUser(null); setIsModalOpen(true); };
+  const handleEditUser   = (user) => { setSelectedUser(user); setIsModalOpen(true); };
 
-  const handleRoleFilter = (role) => {
-    setSelectedRole(role);
-  };
-
-  const handleAddUser = () => {
-    setSelectedUser(null);
-    setIsModalOpen(true);
-  };
-
-  const handleEditUser = (user) => {
-    setSelectedUser(user);
-    setIsModalOpen(true);
-  };
-
-  const handleDeleteUser = (userId) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      setUsers(users?.filter(u => u?.id !== userId));
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to deactivate this user?')) return;
+    try {
+      await updateUser(userId, { is_active: false });
+      setUsers(prev => prev.filter(u => u.id !== userId));
+    } catch (err) {
+      alert(`Error: ${err.message}`);
     }
   };
 
-  const handleToggleStatus = (userId) => {
-    setUsers(users?.map(u => 
-      u?.id === userId 
-        ? { ...u, status: u?.status === 'active' ? 'inactive' : 'active' }
-        : u
-    ));
-  };
-
-  const handleSaveUser = (userData) => {
-    if (selectedUser) {
-      // Edit existing user
-      setUsers(users?.map(u => 
-        u?.id === selectedUser?.id 
-          ? { ...u, ...userData }
-          : u
+  const handleToggleStatus = async (userId) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+    try {
+      await toggleUserStatus(userId, target.is_active);
+      setUsers(prev => prev.map(u =>
+        u.id === userId ? { ...u, is_active: !u.is_active } : u
       ));
-    } else {
-      // Add new user
-      const newUser = {
-        id: users?.length + 1,
-        ...userData,
-        avatar: `https://i.pravatar.cc/150?img=${users?.length + 1}`,
-        status: 'active',
-        lastActive: 'Just now'
-      };
-      setUsers([...users, newUser]);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
     }
-    setIsModalOpen(false);
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setSelectedUser(null);
+  const handleSaveUser = async (userData) => {
+    try {
+      if (selectedUser) {
+        await updateUser(selectedUser.id, userData);
+        setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, ...userData } : u));
+      } else {
+        // New user — optimistic UI, real creation needs backend
+        const newUser = { id: `temp-${Date.now()}`, ...userData, is_active: true, created_at: new Date().toISOString() };
+        setUsers(prev => [newUser, ...prev]);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setIsModalOpen(false);
+    }
   };
+
+  // Adapt DB shape to what UserTable expects
+  const tableUsers = filteredUsers.map(u => ({
+    id:         u.id,
+    name:       u.full_name,
+    email:      u.email,
+    role:       u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Agent',
+    status:     u.is_active ? 'active' : 'inactive',
+    lastActive: u.last_login ? new Date(u.last_login).toLocaleString() : 'Never',
+    avatar:     `https://i.pravatar.cc/150?u=${u.email}`,
+  }));
 
   return (
     <>
       <Header />
       <main className="pt-16 min-h-screen bg-background">
         <div className="container mx-auto p-6 max-w-[1600px]">
-          {/* Page Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-foreground mb-2 font-['Inter']">
-              User Management
-            </h1>
-            <p className="text-muted-foreground font-['Inter']">
-              Manage access and roles
-            </p>
+
+          <div className="mb-6 flex items-start justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground mb-2 font-['Inter']">User Management</h1>
+              <p className="text-muted-foreground font-['Inter']">Manage access and roles</p>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              {loading && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
+              {error   && <span className="text-xs text-destructive">⚠ {error}</span>}
+            </div>
           </div>
 
-          {/* Action Toolbar */}
-          <ActionToolbar
-            onSearch={handleSearch}
-            onRoleFilter={handleRoleFilter}
-            onAddUser={handleAddUser}
-          />
+          <ActionToolbar onSearch={handleSearch} onRoleFilter={handleRoleFilter} onAddUser={handleAddUser} />
 
-          {/* User Table */}
           <UserTable
-            users={filteredUsers}
-            onEdit={handleEditUser}
-            onDelete={handleDeleteUser}
-            onToggleStatus={handleToggleStatus}
+            users={tableUsers}
+            onEdit={u => handleEditUser(users.find(x => x.id === u.id) ?? u)}
+            onDelete={u => handleDeleteUser(u.id)}
+            onToggleStatus={u => handleToggleStatus(u.id)}
           />
         </div>
       </main>
 
-      {/* User Modal */}
       {isModalOpen && (
-        <UserModal
-          user={selectedUser}
-          onSave={handleSaveUser}
-          onClose={handleCloseModal}
-        />
+        <UserModal user={selectedUser} onSave={handleSaveUser} onClose={() => { setIsModalOpen(false); setSelectedUser(null); }} />
       )}
     </>
   );
