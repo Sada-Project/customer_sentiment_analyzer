@@ -272,7 +272,8 @@ const AdminUserManagement = () => {
           hour: '2-digit', minute: '2-digit',
         })
       : 'لم يسجّل دخولاً بعد',
-    avatar:     `https://i.pravatar.cc/150?u=${u.email}`,
+    avatar:     u.avatar_url
+                  || `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(u.email || u.id)}`,
     // Keep raw DB fields for the edit modal
     full_name:  u.full_name,
     is_active:  u.is_active,

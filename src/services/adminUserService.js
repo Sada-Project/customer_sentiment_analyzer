@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 export async function fetchUsers({ search, role } = {}) {
   let query = supabase
     .from('user_profiles')
-    .select('id, email, username, full_name, role, is_active, created_at, last_login');
+    .select('id, email, username, full_name, role, is_active, created_at, last_login, avatar_url');
 
   if (role && role !== 'all') {
     query = query.eq('role', role);

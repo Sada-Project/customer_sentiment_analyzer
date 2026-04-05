@@ -147,12 +147,32 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  // ── Sign Out ──────────────────────────────────────────────────────────────
+  // ── Update Profile (name, avatar_url) ──────────────────────────────────────
+  const updateProfile = async (updates) => {
+    if (!user?.id) throw new Error('لا يوجد مستخدم مسجّل الدخول.');
+
+    const allowed = ['full_name', 'avatar_url'];
+    const payload = Object.fromEntries(
+      Object.entries(updates).filter(([k]) => allowed.includes(k))
+    );
+
+    const { error } = await supabase
+      .from('user_profiles')
+      .update(payload)
+      .eq('id', user.id);
+
+    if (error) throw new Error(error.message);
+
+    // Refresh local profile state
+    setProfile(prev => prev ? { ...prev, ...payload } : prev);
+  };
+
+  // ── Sign Out ─────────────────────────────────────────────────────────────────
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  const value = { user, profile, loading, signIn, signOut };
+  const value = { user, profile, loading, signIn, signOut, updateProfile };
 
   return (
     <AuthContext.Provider value={value}>

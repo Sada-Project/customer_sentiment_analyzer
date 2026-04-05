@@ -14,6 +14,7 @@ import PerformanceAnalytics from './pages/performance-analytics';
 import CallDetails from './pages/call-details';
 import AgentPerformanceCards from './pages/agent-performance-cards';
 import AdminUserManagement from './pages/admin-user-management';
+import ProfilePage from './pages/profile';
 
 // ── Redirect user to their default page based on role ────────────────────────
 const RoleBasedRedirect = () => {
@@ -101,6 +102,15 @@ const Routes = () => {
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminUserManagement />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <ProfilePage />
                 </ProtectedRoute>
               }
             />

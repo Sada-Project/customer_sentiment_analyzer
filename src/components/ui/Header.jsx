@@ -121,7 +121,13 @@ const Header = () => {
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-150 ease-out"
             >
-              <Icon name="User" size={18} />
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="avatar" className="w-7 h-7 rounded-full object-cover border border-border" />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Icon name="User" size={16} color="var(--color-primary)" />
+                </div>
+              )}
               <span>{profile?.full_name || profile?.email}</span>
               <span className="px-2 py-0.5 text-xs font-semibold bg-primary/10 text-primary rounded">
                 {profile?.role}
@@ -130,7 +136,16 @@ const Header = () => {
             </button>
 
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-card border border-border rounded-lg shadow-lg py-2 z-50">
+              <div className="absolute right-0 mt-2 w-52 bg-card border border-border rounded-lg shadow-lg py-2 z-50">
+                <Link
+                  to="/profile"
+                  onClick={() => setShowUserMenu(false)}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-150 ease-out"
+                >
+                  <Icon name="UserCircle" size={16} />
+                  <span>الملف الشخصي</span>
+                </Link>
+                <div className="border-t border-border my-1" />
                 <button
                   onClick={handleSignOut}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-150 ease-out"
