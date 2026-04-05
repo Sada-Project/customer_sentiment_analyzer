@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../../components/ui/Header';
 import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
+import GeminiAnalysisPanel from '../../components/GeminiAnalysisPanel';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import {
   fetchCallById,
@@ -276,6 +277,21 @@ const CallDetails = () => {
               </div>
             </div>
           )}
+
+          {/* Gemini AI Analysis Panel */}
+          <div className="mt-6">
+            <GeminiAnalysisPanel
+              transcript={displayTranscript.map(m => `${m.speaker === 'agent' ? 'Agent' : 'Customer'}: ${m.message}`).join('\n')}
+              callMeta={{
+                customerName:    customer?.full_name ?? customer?.company_name,
+                agentName:       agent?.name,
+                interactionType: callData?.interaction_type,
+                duration:        callData?.duration_seconds
+                  ? `${Math.floor(callData.duration_seconds / 60)}:${String(callData.duration_seconds % 60).padStart(2, '0')}`
+                  : undefined,
+              }}
+            />
+          </div>
 
         </div>
       </main>

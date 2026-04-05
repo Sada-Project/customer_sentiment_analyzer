@@ -4,6 +4,7 @@ import RecordingInterface from './components/RecordingInterface';
 import FileUploadZone from './components/FileUploadZone';
 import ProcessingQueue from './components/ProcessingQueue';
 import RecentAnalysis from './components/RecentAnalysis';
+import GeminiAnalysisPanel from '../../components/GeminiAnalysisPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   fetchRecentAnalyses,
@@ -127,6 +128,16 @@ const VoiceAnalysisHub = () => {
               <RecentAnalysis analyses={completedAnalyses} />
             </div>
           </div>
+
+          {/* Gemini AI Live Analysis Panel */}
+          <div className="mt-6">
+            <GeminiAnalysisPanel
+              onAnalysisComplete={(result) => {
+                console.log('[Gemini] Analysis complete:', result);
+              }}
+            />
+          </div>
+
         </div>
       </main>
     </>
