@@ -1,46 +1,54 @@
 import React from 'react';
 import Icon from '../../../components/AppIcon';
-import Input from '../../../components/ui/Input';
 
-import Button from '../../../components/ui/Button';
+// Role filter options
+const ROLE_OPTIONS = [
+  { value: 'all',   label: 'جميع الأدوار' },
+  { value: 'admin', label: 'Admin'         },
+  { value: 'agent', label: 'Agent'         },
+];
 
 const ActionToolbar = ({ onSearch, onRoleFilter, onAddUser }) => {
-  const handleSearchChange = (e) => {
-    onSearch?.(e?.target?.value);
-  };
-
-  const handleRoleChange = (e) => {
-    onRoleFilter?.(e?.target?.value);
-  };
-
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 mb-6">
-      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+    <div className="bg-card border border-border rounded-lg p-4 mb-6">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+
         {/* Search Input */}
-        <div className="flex-1 w-full md:w-auto">
+        <div className="flex-1 w-full sm:w-auto">
           <div className="relative">
-            <Icon 
-              name="Search" 
-              size={18} 
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+            <Icon
+              name="Search"
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
             />
-            <Input
+            <input
               type="text"
-              placeholder="Search Users..."
-              className="pl-10 bg-slate-900 border-slate-700 text-white placeholder-slate-400 w-full"
-              onChange={handleSearchChange}
+              placeholder="البحث عن مستخدم..."
+              onChange={(e) => onSearch?.(e?.target?.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
             />
           </div>
         </div>
 
-        {/* Add User Button */}
-        <Button
-          onClick={onAddUser}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 whitespace-nowrap"
+        {/* Role Filter */}
+        <select
+          onChange={(e) => onRoleFilter?.(e?.target?.value)}
+          defaultValue="all"
+          className="px-3 py-2.5 bg-input border border-border rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all cursor-pointer"
         >
-          <Icon name="Plus" size={18} />
-          <span>Add New User</span>
-        </Button>
+          {ROLE_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+
+        {/* Add User Button */}
+        <button
+          onClick={onAddUser}
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap"
+        >
+          <Icon name="UserPlus" size={16} />
+          <span>إضافة مستخدم</span>
+        </button>
       </div>
     </div>
   );

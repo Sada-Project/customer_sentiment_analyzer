@@ -3,25 +3,93 @@ import Header from '../../components/ui/Header';
 import ActionToolbar from './components/ActionToolbar';
 import UserTable from './components/UserTable';
 import UserModal from './components/UserModal';
-import { fetchUsers, toggleUserStatus, updateUser } from '../../services/adminUserService';
+import { fetchUsers, toggleUserStatus, updateUser, inviteUser, deleteUser } from '../../services/adminUserService';
 
-// ── Simple Toast notification ─────────────────────────────────────────────────
+// ── Toast notification — top center, large & clear ────────────────────────────
+const TOAST_ICONS = {
+  success: (
+    <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+  error: (
+    <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+    </svg>
+  ),
+  info: (
+    <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z" />
+    </svg>
+  ),
+};
+
+const TOAST_STYLES = {
+  success: {
+    wrapper: 'bg-emerald-950/95 border-emerald-500/40 text-emerald-300',
+    bar:     'bg-emerald-500',
+    icon:    'text-emerald-400',
+  },
+  error: {
+    wrapper: 'bg-red-950/95 border-red-500/40 text-red-300',
+    bar:     'bg-red-500',
+    icon:    'text-red-400',
+  },
+  info: {
+    wrapper: 'bg-blue-950/95 border-blue-500/40 text-blue-300',
+    bar:     'bg-blue-500',
+    icon:    'text-blue-400',
+  },
+};
+
+const DURATION = 5000;
+
 const Toast = ({ message, type, onClose }) => {
   useEffect(() => {
-    const t = setTimeout(onClose, 4000);
+    const t = setTimeout(onClose, DURATION);
     return () => clearTimeout(t);
   }, [onClose]);
 
-  const colors = {
-    success: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
-    error:   'bg-destructive/10 border-destructive/30 text-destructive',
-    info:    'bg-primary/10 border-primary/30 text-primary',
-  };
+  const style = TOAST_STYLES[type] ?? TOAST_STYLES.info;
 
   return (
-    <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 border rounded-lg shadow-lg ${colors[type] ?? colors.info} animate-in slide-in-from-bottom-2`}>
-      <span className="text-sm font-medium">{message}</span>
-      <button onClick={onClose} className="opacity-70 hover:opacity-100 text-lg leading-none">×</button>
+    <div
+      className={`
+        fixed top-20 left-1/2 -translate-x-1/2 z-[200]
+        flex items-start gap-4
+        px-6 py-4 rounded-xl border shadow-2xl backdrop-blur-sm
+        min-w-[340px] max-w-[520px] w-max
+        ${style.wrapper}
+        animate-in slide-in-from-top-4 fade-in duration-300
+      `}
+    >
+      {/* Icon */}
+      <span className={`mt-0.5 ${style.icon}`}>{TOAST_ICONS[type] ?? TOAST_ICONS.info}</span>
+
+      {/* Message */}
+      <p className="flex-1 text-base font-medium leading-snug">{message}</p>
+
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        className="mt-0.5 opacity-60 hover:opacity-100 transition-opacity text-xl leading-none"
+        aria-label="إغلاق"
+      >
+        ×
+      </button>
+
+      {/* Auto-dismiss progress bar */}
+      <span
+        className={`absolute bottom-0 left-0 h-1 rounded-b-xl ${style.bar} opacity-60`}
+        style={{ animation: `shrink ${DURATION}ms linear forwards` }}
+      />
+
+      <style>{`
+        @keyframes shrink {
+          from { width: 100%; }
+          to   { width: 0%; }
+        }
+      `}</style>
     </div>
   );
 };
@@ -99,41 +167,58 @@ const AdminUserManagement = () => {
   const handleAddUser    = ()     => { setSelectedUser(null); setIsModalOpen(true); };
   const handleEditUser   = (user) => { setSelectedUser(user); setIsModalOpen(true); };
 
-  // ── Deactivate user (does NOT remove from list — marks as inactive) ─────────
+  // ── Permanently delete user (only available for inactive accounts) ───────────
   const handleDeleteUser = (userId) => {
     setConfirm({
-      message: 'هل أنت متأكد؟ سيتم تعطيل هذا الحساب.',
+      message: 'هل أنت متأكد من حذف هذا الحساب نهائياً؟ سيتم إزالته من النظام بشكل كامل ولا يمكن التراجع عن هذا الإجراء.',
       onConfirm: async () => {
         setConfirm(null);
         try {
-          await updateUser(userId, { is_active: false });
-          // Update in-place: mark inactive, don't remove from list
-          setUsers(prev => prev.map(u =>
-            u.id === userId ? { ...u, is_active: false } : u
-          ));
-          showToast('تم تعطيل المستخدم بنجاح.', 'success');
+          await deleteUser(userId);
+          setUsers(prev => prev.filter(u => u.id !== userId));
+          showToast('تم حذف الحساب نهائياً.', 'success');
         } catch (err) {
-          showToast(`خطأ: ${err.message}`, 'error');
+          showToast(`خطأ في الحذف: ${err.message}`, 'error');
         }
       },
     });
   };
 
   // ── Toggle active / inactive ────────────────────────────────────────────────
-  const handleToggleStatus = async (userId) => {
+  const handleToggleStatus = (userId) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
-    try {
-      await toggleUserStatus(userId, target.is_active);
-      setUsers(prev => prev.map(u =>
-        u.id === userId ? { ...u, is_active: !u.is_active } : u
-      ));
-      showToast(
-        target.is_active ? 'تم تعطيل المستخدم.' : 'تم تفعيل المستخدم.',
-        'success'
-      );
-    } catch (err) {
-      showToast(`خطأ: ${err.message}`, 'error');
+
+    // Only show confirmation dialog when DISABLING an active account
+    if (target.is_active) {
+      setConfirm({
+        message: `هل أنت متأكد من تعطيل حساب "${target.full_name || target.email}"؟ لن يتمكن المستخدم من تسجيل الدخول حتى يتم تفعيل حسابه مجدداً.`,
+        onConfirm: async () => {
+          setConfirm(null);
+          try {
+            await toggleUserStatus(userId, true);
+            setUsers(prev => prev.map(u =>
+              u.id === userId ? { ...u, is_active: false } : u
+            ));
+            showToast('تم تعطيل الحساب بنجاح.', 'success');
+          } catch (err) {
+            showToast(`خطأ: ${err.message}`, 'error');
+          }
+        },
+      });
+    } else {
+      // Enable immediately — no confirmation needed
+      (async () => {
+        try {
+          await toggleUserStatus(userId, false);
+          setUsers(prev => prev.map(u =>
+            u.id === userId ? { ...u, is_active: true } : u
+          ));
+          showToast('تم تفعيل الحساب بنجاح.', 'success');
+        } catch (err) {
+          showToast(`خطأ: ${err.message}`, 'error');
+        }
+      })();
     }
   };
 
@@ -141,21 +226,31 @@ const AdminUserManagement = () => {
   const handleSaveUser = async (userData) => {
     try {
       if (selectedUser) {
-        await updateUser(selectedUser.id, userData);
+        // Only update allowed fields; skip if user has a temp ID (not in DB yet)
+        const isTempUser = String(selectedUser.id).startsWith('temp-');
+        if (!isTempUser) {
+          await updateUser(selectedUser.id, {
+            full_name: userData.full_name,
+            role:      userData.role,
+          });
+        }
         setUsers(prev => prev.map(u =>
-          u.id === selectedUser.id ? { ...u, ...userData } : u
+          u.id === selectedUser.id
+            ? { ...u, full_name: userData.full_name, role: userData.role }
+            : u
         ));
         showToast('تم تحديث بيانات المستخدم.', 'success');
       } else {
-        // New user — optimistic UI; real creation requires backend/admin SDK
-        const newUser = {
-          id: `temp-${Date.now()}`,
-          ...userData,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        };
-        setUsers(prev => [newUser, ...prev]);
-        showToast('تم إضافة المستخدم (يجب إنشاء الحساب في Supabase Auth).', 'info');
+        // New user — create real account in Supabase Auth
+        await inviteUser({
+          email:     userData.email,
+          full_name: userData.full_name,
+          role:      userData.role,
+          password:  userData.password,
+        });
+        // Reload list from DB to get the real user record
+        await loadUsers();
+        showToast('تم إنشاء حساب المستخدم بنجاح.', 'success');
       }
     } catch (err) {
       showToast(`خطأ: ${err.message}`, 'error');
@@ -167,12 +262,20 @@ const AdminUserManagement = () => {
   // ── Adapt DB shape to what UserTable expects ────────────────────────────────
   const tableUsers = filteredUsers.map(u => ({
     id:         u.id,
-    name:       u.full_name,
+    name:       u.full_name || u.email || '—',  // always show full_name
     email:      u.email,
-    role:       u.role ?? 'agent',          // keep lowercase for consistency
+    role:       u.role ?? 'agent',
     status:     u.is_active ? 'active' : 'inactive',
-    lastActive: u.last_login ? new Date(u.last_login).toLocaleString() : 'Never',
+    lastActive: u.last_login
+      ? new Date(u.last_login).toLocaleString('ar-SA', {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        })
+      : 'لم يسجّل دخولاً بعد',
     avatar:     `https://i.pravatar.cc/150?u=${u.email}`,
+    // Keep raw DB fields for the edit modal
+    full_name:  u.full_name,
+    is_active:  u.is_active,
   }));
 
   return (
