@@ -1,45 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 
-const ProcessingQueue = ({ queueItems, onItemComplete }) => {
-  const [items, setItems] = useState(queueItems);
 
-  useEffect(() => {
-    setItems(queueItems);
-  }, [queueItems]);
-
-  useEffect(() => {
-    const processingItems = items?.filter(item => item?.status === 'processing');
-    
-    if (processingItems?.length > 0) {
-      const interval = setInterval(() => {
-        setItems(prevItems => 
-          prevItems?.map(item => {
-            if (item?.status === 'processing') {
-              const newProgress = Math.min((item?.progress || 0) + 5, 100);
-              if (newProgress === 100) {
-                setTimeout(() => {
-                  onItemComplete({
-                    ...item,
-                    status: 'completed',
-                    progress: 100,
-                    completedAt: new Date(),
-                    sentimentScore: Math.floor(Math.random() * 40) + 60,
-                    sentiment: ['Positive', 'Neutral', 'Negative']?.[Math.floor(Math.random() * 3)]
-                  });
-                }, 500);
-              }
-              return { ...item, progress: newProgress };
-            }
-            return item;
-          })
-        );
-      }, 1000);
-
-      return () => clearInterval(interval);
-    }
-  }, [items, onItemComplete]);
+const ProcessingQueue = ({ items = [], onItemComplete }) => {
 
   const getStatusIcon = (status) => {
     switch (status) {

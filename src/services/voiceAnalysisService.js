@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 export async function fetchRecentAnalyses(limit = 10) {
   const { data, error } = await supabase
     .from('call_recordings')
-    .select('id, call_ref, file_name, file_format, sentiment, sentiment_score, sentiment_confidence, duration_seconds, processed_at, status')
+    .select('id, call_ref, file_name, file_format, sentiment, sentiment_score, sentiment_confidence, duration_seconds, processed_at, status, ai_summary, transcript_text, audio_url')
     .eq('status', 'completed')
     .order('processed_at', { ascending: false })
     .limit(limit);
@@ -20,7 +20,28 @@ export async function fetchRecentAnalyses(limit = 10) {
     completedAt:    new Date(row.processed_at),
     duration:       formatDuration(row.duration_seconds),
     status:         row.status,
+    aiSummary:      row.ai_summary ?? null,
+    transcript:     row.transcript_text ?? null,
+    audioUrl:       row.audio_url ?? null,
   }));
+}
+
+// ─── Create a new call_recordings row before processing ──────────────────────
+export async function createCallRecord({ fileName, fileFormat, fileSizeBytes, submittedBy }) {
+  const { data, error } = await supabase
+    .from('call_recordings')
+    .insert({
+      file_name:       fileName,
+      file_format:     fileFormat?.toLowerCase().replace('.', ''),
+      file_size_bytes: fileSizeBytes,
+      status:          'processing',
+      processing_started_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return data.id; // return the UUID to use for updates
 }
 
 // ─── Processing Queue ─────────────────────────────────────────────────────────
@@ -35,6 +56,33 @@ export async function fetchProcessingQueue(userId) {
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;
   return data ?? [];
+}
+
+// ─── Upload audio file to Supabase Storage ────────────────────────────────────
+export async function uploadAudioToStorage(audioBlob, callId, fileName) {
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path     = `${callId}/${safeName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('call-audio')
+    .upload(path, audioBlob, {
+      contentType: audioBlob.type || 'audio/webm',
+      upsert:      true,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage.from('call-audio').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// ─── Save audio URL back to call_recordings ───────────────────────────────────
+export async function saveAudioUrl(callId, audioUrl) {
+  const { error } = await supabase
+    .from('call_recordings')
+    .update({ audio_url: audioUrl })
+    .eq('id', callId);
+  if (error) throw error;
 }
 
 // ─── Add file to processing queue ────────────────────────────────────────────
