@@ -131,3 +131,40 @@ function formatDuration(seconds) {
   const s = seconds % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+
+// ─── Delete recordings by IDs (DB + Storage) ─────────────────────────────────
+export async function deleteRecordings(ids) {
+  if (!ids?.length) return;
+
+  // 1. Fetch audio_url for each to also delete from Storage
+  const { data: rows } = await supabase
+    .from('call_recordings')
+    .select('id, audio_url')
+    .in('id', ids);
+
+  // 2. Delete from Storage (best-effort)
+  if (rows?.length) {
+    const paths = rows
+      .filter(r => r.audio_url)
+      .map(r => {
+        try {
+          const url  = new URL(r.audio_url);
+          const parts = url.pathname.split('/call-audio/');
+          return parts[1] ?? null;
+        } catch { return null; }
+      })
+      .filter(Boolean);
+
+    if (paths.length) {
+      await supabase.storage.from('call-audio').remove(paths).catch(() => {});
+    }
+  }
+
+  // 3. Delete from DB
+  const { error } = await supabase
+    .from('call_recordings')
+    .delete()
+    .in('id', ids);
+
+  if (error) throw error;
+}

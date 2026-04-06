@@ -13,7 +13,6 @@ import {
 } from '../../services/geminiService';
 import {
   fetchRecentAnalyses,
-  fetchProcessingQueue,
   enqueueFile,
   createCallRecord,
   uploadAudioToStorage,
@@ -46,14 +45,11 @@ const VoiceAnalysisHub = () => {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([fetchRecentAnalyses(10), fetchProcessingQueue(user?.id)])
-      .then(([analyses, queue]) => {
-        if (cancelled) return;
-        setCompletedAnalyses(analyses);
-        setQueueItems(queue);
-      })
-      .catch(err => { if (!cancelled) setError(err.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    // Queue is session-only — don't load stale DB items from past sessions
+    fetchRecentAnalyses(3)
+      .then(analyses => { if (!cancelled) setCompletedAnalyses(analyses); })
+      .catch(err    => { if (!cancelled) setError(err.message); })
+      .finally(()   => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [user?.id]);
 
@@ -63,7 +59,21 @@ const VoiceAnalysisHub = () => {
   }, []);
 
   // ── Core pipeline: Audio Blob → Transcript → Analysis → UI ─────────────────
-  const processAudio = useCallback(async (audioBlob, fileName, dbId = null, audioUrl = null) => {
+  // ── Get real audio duration from blob ──────────────────────────────────────
+  const getAudioDuration = (blob) => new Promise((resolve) => {
+    const audio = new Audio();
+    const url   = URL.createObjectURL(blob);
+    audio.src   = url;
+    audio.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(audio.duration || 0); };
+    audio.onerror          = () => { URL.revokeObjectURL(url); resolve(0); };
+  });
+
+  const formatDur = (s) => {
+    if (!s || isNaN(s)) return '0:00';
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  };
+
+  const processAudio = useCallback(async (audioBlob, fileName, dbId = null, audioUrl = null, recordedDuration = 0) => {
     if (!audioBlob) return;
     if (geminiStatus === 'offline') {
       setActiveJob({ fileName, step: '❌ Gemini غير متصل — تحقق من مفتاح الـ API', progress: 0, error: true });
@@ -95,25 +105,34 @@ const VoiceAnalysisHub = () => {
       setActiveJob(j => ({ ...j, result, step: 'اكتمل التحليل بنجاح ✅', progress: 100 }));
 
       // ── Step 3: Push to Recent Analyses list ───────────────────────────────
-      const s = result.sentiment?.sentiment ?? 'neutral';
+      const s            = result.sentiment?.sentiment ?? 'neutral';
+      const durSecs      = await getAudioDuration(audioBlob);
+      // Fallback to recordedDuration for WebM blobs (returns Infinity or NaN)
+      const finalDurSecs  = (durSecs && isFinite(durSecs) && !isNaN(durSecs) && durSecs > 0) ? durSecs : recordedDuration;
+      const durFormatted  = formatDur(finalDurSecs);
+
       setCompletedAnalyses(prev => [{
-        id: dbId ?? `local_${Date.now()}`,
+        id:             dbId ?? `local_${Date.now()}`,
         fileName,
-        sentiment: s,
+        sentiment:      s,
         sentimentScore: result.sentiment?.sentiment_score ?? 50,
-        completedAt: new Date(),
-        duration: '0:00',
-        confidence: result.sentiment?.sentiment_confidence ?? 0,
-        transcript: transcript.slice(0, 500) + (transcript.length > 500 ? '…' : ''),
-        aiSummary: result.summary?.summary,
-        audioUrl: audioUrl ?? null,   // ← so Play works immediately
+        completedAt:    new Date(),
+        duration:       durFormatted,
+        confidence:     result.sentiment?.sentiment_confidence ?? 0,
+        transcript:     transcript.slice(0, 500) + (transcript.length > 500 ? '…' : ''),
+        aiSummary:      result.summary?.summary,
+        audioUrl:       audioUrl ?? null,
       }, ...prev]);
 
-      // ── Step 4: Update DB queue status ────────────────────────────────────
+      // Also save duration to DB (use finalDurSecs — durSecs can be Infinity for WebM)
+      if (dbId && finalDurSecs > 0) {
+        const { supabase: sb } = await import('../../lib/supabase');
+        sb.from('call_recordings').update({ duration_seconds: Math.round(finalDurSecs) }).eq('id', dbId).then(() => {});
+      }
+
+      // ── Step 4: Remove from queue instantly (no page refresh needed) ─────────
       if (dbId) {
-        setQueueItems(prev => prev.map(item =>
-          item.id === dbId ? { ...item, status: 'completed', progress_pct: 100 } : item
-        ));
+        setQueueItems(prev => prev.filter(item => item.id !== dbId));
         await updateQueueProgress(dbId, 100, 'completed').catch(() => { });
       }
 
@@ -165,7 +184,7 @@ const VoiceAnalysisHub = () => {
       setQueueItems(prev => [{ fileName: recording.fileName, status: 'processing', progress_pct: 0 }, ...prev]);
     }
 
-    processAudio(recording.audioBlob, recording.fileName, callId, audioUrl);
+    processAudio(recording.audioBlob, recording.fileName, callId, audioUrl, recording.duration ?? 0);
   };
 
   const handleFilesAdded = async (file) => {
@@ -368,16 +387,23 @@ const VoiceAnalysisHub = () => {
           )}
 
           {/* ── Main Grid ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
             <div className="lg:col-span-5 flex flex-col gap-6">
               <RecordingInterface onRecordingComplete={handleRecordingComplete} />
-              <FileUploadZone onFilesAdded={handleFilesAdded} />
-              {queueItems.length > 0 && (
-                <ProcessingQueue items={queueItems} onItemComplete={handleItemComplete} />
-              )}
+              <FileUploadZone onFilesAdded={handleFilesAdded} className="flex-1" />
             </div>
-            <div className="lg:col-span-7 flex">
+            <div className="lg:col-span-7 flex flex-col gap-4">
               <RecentAnalysis analyses={completedAnalyses} />
+
+              {/* Processing Queue — below recent analysis, auto-hides when done */}
+              {queueItems.some(i => (i.status === 'processing' || i.status === 'pending') && (i.file_name || i.fileName)) && (
+                <ProcessingQueue
+                  items={queueItems.filter(i =>
+                    (i.status === 'processing' || i.status === 'pending') && (i.file_name || i.fileName)
+                  )}
+                  onItemComplete={handleItemComplete}
+                />
+              )}
             </div>
           </div>
 

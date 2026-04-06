@@ -59,53 +59,40 @@ const ProcessingQueue = ({ items = [], onItemComplete }) => {
 
   return (
     <div className="bg-card rounded-lg border border-border">
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center justify-between">
+      <div className="p-5 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 bg-accent/10 rounded-lg">
-              <Icon name="ListMusic" size={20} color="var(--color-accent)" />
+            <div className="flex items-center justify-center w-9 h-9 bg-accent/10 rounded-lg">
+              <Icon name="ListMusic" size={18} color="var(--color-accent)" />
             </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Processing Queue</h2>
-              <p className="text-sm text-muted-foreground">
-                {items?.filter(i => i?.status === 'processing')?.length} processing • {items?.filter(i => i?.status === 'completed')?.length} completed
-              </p>
-            </div>
+            <h2 className="text-base font-semibold text-foreground">Processing Queue</h2>
           </div>
-          <Button variant="ghost" size="sm" iconName="RefreshCw">
-            Refresh
-          </Button>
-        </div>
       </div>
       <div className="divide-y divide-border">
         {items?.map((item) => {
           const statusIcon = getStatusIcon(item?.status);
+          const displayName = item?.file_name ?? item?.fileName ?? 'Unknown file';
+          const fileSize = item?.file_size_bytes ?? item?.fileSize;
           return (
-            <div key={item?.id} className="p-6 hover:bg-muted/30 transition-colors">
-              <div className="flex items-start gap-4">
-                <div className={`mt-1 ${item?.status === 'processing' ? 'animate-spin' : ''}`}>
-                  <Icon name={statusIcon?.name} size={20} color={statusIcon?.color} />
+            <div key={item?.id ?? item?.fileName} className="p-5 hover:bg-muted/30 transition-colors">
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 flex-shrink-0 ${item?.status === 'processing' ? 'animate-spin' : ''}`}>
+                  <Icon name={statusIcon?.name} size={18} color={statusIcon?.color} />
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-4 mb-2">
+                  <div className="flex items-start justify-between gap-3 mb-2">
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-medium text-foreground truncate">
-                        {item?.fileName}
+                        {displayName}
                       </h3>
                       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        {item?.duration && (
+                        {fileSize && (
                           <span className="flex items-center gap-1">
-                            <Icon name="Clock" size={12} />
-                            {formatDuration(item?.duration)}
+                            <Icon name="HardDrive" size={11} />
+                            {(fileSize / (1024 * 1024)).toFixed(1)} MB
                           </span>
                         )}
-                        {item?.fileSize && (
-                          <span className="flex items-center gap-1">
-                            <Icon name="HardDrive" size={12} />
-                            {(item?.fileSize / (1024 * 1024))?.toFixed(2)} MB
-                          </span>
-                        )}
+                        <span className="capitalize">{item?.source ?? 'upload'}</span>
                       </div>
                     </div>
 

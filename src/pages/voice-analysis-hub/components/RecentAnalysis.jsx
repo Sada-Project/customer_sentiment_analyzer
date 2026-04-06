@@ -236,15 +236,32 @@ const RecentAnalysis = ({ analyses = [] }) => {
       `✅ Confidence: ${analysis.confidence ?? 0}%`,
     ].join('\n');
 
+    const copyFallback = () => {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setSharedId(analysis.id);
+      setTimeout(() => setSharedId(null), 2500);
+    };
+
     try {
       if (navigator.share) {
         await navigator.share({ title: 'Call Analysis', text });
-      } else {
+      } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
         setSharedId(analysis.id);
         setTimeout(() => setSharedId(null), 2500);
+      } else {
+        copyFallback();
       }
-    } catch { /* user cancelled */ }
+    } catch {
+      // clipboard API failed (HTTP/IP) — use textarea trick
+      copyFallback();
+    }
   };
 
   const handlePlay = (analysis) => {
@@ -258,7 +275,7 @@ const RecentAnalysis = ({ analyses = [] }) => {
   // ── Empty state ─────────────────────────────────────────────────────────────
   if (analyses.length === 0) {
     return (
-      <div className="bg-card rounded-lg border border-border p-8 h-full flex flex-col items-center justify-center text-center">
+      <div className="bg-card rounded-lg border border-border p-8 flex flex-col items-center justify-center text-center">
         <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
           <Icon name="History" size={32} color="var(--color-muted-foreground)" />
         </div>
@@ -273,7 +290,7 @@ const RecentAnalysis = ({ analyses = [] }) => {
   // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <>
-      <div className="bg-card rounded-lg border border-border h-full flex flex-col w-full">
+      <div className="bg-card rounded-lg border border-border flex flex-col w-full">
         {/* Header */}
         <div className="p-6 border-b border-border">
           <div className="flex items-center justify-between">
@@ -283,7 +300,9 @@ const RecentAnalysis = ({ analyses = [] }) => {
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-foreground">Recent Analysis</h2>
-                <p className="text-sm text-muted-foreground">Last {analyses.length} completed</p>
+                <p className="text-sm text-muted-foreground">
+                  Showing latest 3 — click <strong>View All</strong> for full history
+                </p>
               </div>
             </div>
 
@@ -298,9 +317,9 @@ const RecentAnalysis = ({ analyses = [] }) => {
           </div>
         </div>
 
-        {/* List */}
+        {/* List — max 3 items */}
         <div className="divide-y divide-border overflow-y-auto flex-1">
-          {analyses.map((analysis) => {
+          {analyses.slice(0, 3).map((analysis) => {
             const cfg = getSentimentConfig(analysis.sentimentScore, analysis.sentiment);
             return (
               <div
@@ -324,10 +343,9 @@ const RecentAnalysis = ({ analyses = [] }) => {
                       </span>
                     </div>
 
-                    {/* Date + score */}
+                    {/* Date */}
                     <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
                       <span>{formatDate(analysis.completedAt)}</span>
-                      <span className="text-foreground font-medium">{analysis.sentimentScore}%</span>
                     </div>
 
                     {/* Transcript snippet */}

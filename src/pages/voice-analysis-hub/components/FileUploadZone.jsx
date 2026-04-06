@@ -4,11 +4,16 @@ import Button from '../../../components/ui/Button';
 
 const SUPPORTED_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-m4a', 'audio/webm', 'audio/ogg'];
 const SUPPORTED_EXT   = '.mp3,.wav,.m4a,.webm,.ogg,.mp4';
-const MAX_SIZE        = 20 * 1024 * 1024; // 20MB (Gemini inline limit)
+const MAX_SIZE        = 20 * 1024 * 1024; // 20MB
 
-const FileUploadZone = ({ onFilesAdded }) => {
-  const [isDragging, setIsDragging]     = useState(false);
-  const [localQueue,  setLocalQueue]    = useState([]); // { id, name, size, status }
+const formatSize = (bytes) => {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const FileUploadZone = ({ onFilesAdded, className = '' }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState([]); // files waiting for confirm
   const fileInputRef = useRef(null);
 
   const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true);  };
@@ -18,17 +23,18 @@ const FileUploadZone = ({ onFilesAdded }) => {
   const handleDrop = (e) => {
     e.preventDefault(); e.stopPropagation();
     setIsDragging(false);
-    processFiles(Array.from(e.dataTransfer.files));
+    collectFiles(Array.from(e.dataTransfer.files));
   };
 
   const handleFileSelect = (e) => {
-    processFiles(Array.from(e.target.files));
-    e.target.value = ''; // reset so the same file can be re-selected
+    collectFiles(Array.from(e.target.files));
+    e.target.value = '';
   };
 
-  const processFiles = (files) => {
+  // Validate and add to pending list (does NOT call onFilesAdded yet)
+  const collectFiles = (files) => {
+    const valid = [];
     files.forEach(file => {
-      // Validate type (be lenient — accept by extension too)
       const isAudio = SUPPORTED_TYPES.includes(file.type) || file.name.match(/\.(mp3|wav|m4a|webm|ogg|mp4)$/i);
       if (!isAudio) {
         alert(`الصيغة غير مدعومة: ${file.name}\nالصيغ المدعومة: MP3, WAV, M4A, WebM, OGG`);
@@ -38,30 +44,34 @@ const FileUploadZone = ({ onFilesAdded }) => {
         alert(`الملف كبير جداً: ${file.name}\nالحد الأقصى هو 20MB للتوافق مع Gemini AI.`);
         return;
       }
+      valid.push(file);
+    });
+    if (valid.length > 0) {
+      setPendingFiles(prev => [...prev, ...valid]);
+    }
+  };
 
-      // Show in local queue immediately
-      const id = `${file.name}_${Date.now()}`;
-      setLocalQueue(q => [...q, { id, name: file.name, size: file.size, status: 'ready' }]);
-
-      // Pass the REAL file blob to parent
+  // Confirm — send all pending files to parent pipeline
+  const confirmUpload = () => {
+    pendingFiles.forEach(file => {
       onFilesAdded({
-        audioBlob:     file,           // ← real File object (extends Blob)
+        audioBlob:     file,
         fileName:      file.name,
         fileSizeBytes: file.size,
         fileType:      file.type,
-        localId:       id,
       });
     });
+    setPendingFiles([]);
   };
 
-  const formatSize = (bytes) => {
-    if (bytes < 1024)             return `${bytes} B`;
-    if (bytes < 1024 * 1024)     return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  // Cancel — discard all pending
+  const cancelUpload = () => setPendingFiles([]);
+
+  // Remove a single pending file
+  const removeFile = (idx) => setPendingFiles(prev => prev.filter((_, i) => i !== idx));
 
   return (
-    <div className="bg-card rounded-lg border border-border p-6 flex flex-col gap-4">
+    <div className={`bg-card rounded-lg border border-border p-6 flex flex-col gap-4 ${className}`}>
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex items-center justify-center w-10 h-10 bg-secondary/10 rounded-lg">
@@ -69,11 +79,11 @@ const FileUploadZone = ({ onFilesAdded }) => {
         </div>
         <div>
           <h2 className="text-lg font-semibold text-foreground">File Upload</h2>
-          <p className="text-sm text-muted-foreground">Upload audio for AI transcription & analysis</p>
+          <p className="text-sm text-muted-foreground">Upload audio for AI transcription &amp; analysis</p>
         </div>
       </div>
 
-      {/* Drop Zone */}
+      {/* Drop Zone — always visible */}
       <div
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -126,20 +136,50 @@ const FileUploadZone = ({ onFilesAdded }) => {
         </div>
       </div>
 
-      {/* Local queue (just for visual feedback) */}
-      {localQueue.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">الملفات المضافة</h3>
-          {localQueue.map(f => (
-            <div key={f.id} className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg">
-              <Icon name="FileAudio" size={18} color="var(--color-primary)" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{f.name}</p>
-                <p className="text-xs text-muted-foreground">{formatSize(f.size)}</p>
+      {/* Pending files preview */}
+      {pendingFiles.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            الملفات المختارة ({pendingFiles.length})
+          </p>
+
+          <div className="space-y-2">
+            {pendingFiles.map((file, idx) => (
+              <div key={idx} className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg">
+                <Icon name="FileAudio" size={18} color="var(--color-primary)" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                  <p className="text-xs text-muted-foreground">{formatSize(file.size)}</p>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                  className="p-1 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Icon name="X" size={14} />
+                </button>
               </div>
-              <Icon name="CheckCircle2" size={16} className="text-emerald-400 flex-shrink-0" />
-            </div>
-          ))}
+            ))}
+          </div>
+
+          {/* Confirm / Cancel */}
+          <div className="flex items-center gap-3 pt-1">
+            <Button
+              variant="outline" size="sm"
+              iconName="Trash2" iconPosition="left"
+              onClick={cancelUpload}
+              className="flex-1"
+            >
+              إلغاء
+            </Button>
+            <Button
+              variant="default" size="sm"
+              iconName="Sparkles" iconPosition="left"
+              onClick={confirmUpload}
+              className="flex-1"
+            >
+              تحليل {pendingFiles.length > 1 ? `(${pendingFiles.length})` : ''}
+            </Button>
+          </div>
         </div>
       )}
     </div>
