@@ -38,7 +38,7 @@ const SentimentTimelineChart = ({ data }) => {
   const isEmpty = !data || data.length === 0;
 
   return (
-    <div className="bg-card border-2 border-border rounded-lg p-6 h-full flex flex-col">
+    <div className="bg-card border-2 border-border rounded-lg p-6 flex flex-col">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Real-Time Emotion Timeline</h2>
@@ -61,7 +61,7 @@ const SentimentTimelineChart = ({ data }) => {
           <p className="text-xs text-muted-foreground">Call activity will appear here once calls are processed</p>
         </div>
       ) : (
-        <div className="w-full flex-grow" style={{ minHeight: '280px' }} aria-label="Emotion Timeline Chart">
+        <div className="w-full" style={{ height: '320px' }} aria-label="Emotion Timeline Chart">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={data}

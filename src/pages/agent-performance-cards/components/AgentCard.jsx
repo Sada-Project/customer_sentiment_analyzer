@@ -1,147 +1,187 @@
-import React, { useState } from 'react';
+import React from 'react';
 import Icon from '../../../components/AppIcon';
-import Button from '../../../components/ui/Button';
 
-const AgentCard = ({ agent, onViewDetails }) => {
-  const [isSelected] = useState(false);
+// ─── Sentiment color for CSAT bar ─────────────────────────────────────────────
+const getBarColor = (score) => {
+  if (score >= 80) return 'from-emerald-500 to-emerald-400';
+  if (score >= 60) return 'from-blue-500 to-blue-400';
+  if (score >= 40) return 'from-amber-500 to-amber-400';
+  return 'from-rose-500 to-rose-400';
+};
 
+const getTrendIcon = (trend) => {
+  if (trend > 0) return { name: 'TrendingUp',   color: 'rgb(16 185 129)' };
+  if (trend < 0) return { name: 'TrendingDown',  color: 'rgb(239 68 68)' };
+  return              { name: 'Minus',           color: 'rgb(148 163 184)' };
+};
 
+const getTrendClass = (trend) => {
+  if (trend > 0) return 'text-emerald-500';
+  if (trend < 0) return 'text-rose-500';
+  return 'text-slate-400';
+};
 
-  const getTrendIcon = (trend) => {
-    if (trend > 0) return { name: 'TrendingUp', color: 'rgb(16 185 129)' };
-    if (trend < 0) return { name: 'TrendingDown', color: 'rgb(239 68 68)' };
-    return { name: 'Minus', color: 'rgb(148 163 184)' };
-  };
+// ─── Badge chip ───────────────────────────────────────────────────────────────
+const BADGE_COLORS = {
+  top_performer:   'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  fast_responder:  'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  high_csat:       'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  mentor:          'bg-violet-500/15 text-violet-400 border-violet-500/30',
+};
 
-  const getTrendColor = (trend) => {
-    if (trend > 0) return 'text-emerald-500';
-    if (trend < 0) return 'text-rose-500';
-    return 'text-slate-400';
-  };
+const BadgeChip = ({ badge, label }) => (
+  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${BADGE_COLORS[badge] ?? 'bg-slate-700 text-slate-300 border-slate-600'}`}>
+    {label}
+  </span>
+);
 
-  const renderStars = (rating) => {
-    const fullStars = Math.floor(rating / 20);
-    const hasHalfStar = (rating % 20) >= 10;
-    
-    return (
-      <div className="flex items-center gap-0.5">
-        {[...Array(5)]?.map((_, index) => {
-          if (index < fullStars) {
-            return <Icon key={index} name="Star" size={14} color="rgb(234 179 8)" fill="rgb(234 179 8)" />;
-          } else if (index === fullStars && hasHalfStar) {
-            return <Icon key={index} name="Star" size={14} color="rgb(234 179 8)" fill="transparent" />;
-          }
-          return <Icon key={index} name="Star" size={14} color="rgb(71 85 105)" fill="transparent" />;
-        })}
-      </div>
-    );
-  };
+// ─── Format last seen ─────────────────────────────────────────────────────────
+const formatLastSeen = (ts) => {
+  if (!ts) return null;
+  const diff = Math.floor((Date.now() - new Date(ts)) / 1000);
+  if (diff < 60)    return 'Just now';
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+// ─── Main Card ────────────────────────────────────────────────────────────────
+const AgentCard = ({ agent }) => {
+  const initials = agent?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? '?';
+  const perf     = Number(agent?.performanceScore ?? 0);
+  const csat     = Number(agent?.csatScore ?? 0);
+  const fcr      = Number(agent?.fcrRate ?? 0);
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-5 hover:border-slate-600 transition-all duration-200">
-      {/* Header with Avatar and Selection */}
-      <div className="flex items-start justify-between mb-4">
+    <div className="bg-card border border-border rounded-xl p-5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-200 flex flex-col gap-4">
+
+      {/* ── Header: Avatar + Name + Status ── */}
+      <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-              <span className="text-lg font-bold text-white">
-                {agent?.name?.split(' ')?.map(n => n?.[0])?.join('')}
-              </span>
+          <div className="relative flex-shrink-0">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md">
+              <span className="text-base font-bold text-white">{initials}</span>
             </div>
-            {agent?.isOnline && (
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-800"></div>
+            {/* Online indicator */}
+            <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-card ${agent?.isOnline ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-foreground truncate">{agent?.name}</h3>
+            <p className="text-xs text-muted-foreground truncate">{agent?.role}</p>
+            {agent?.department && (
+              <span className="text-[10px] text-primary/70 font-medium">{agent.department}</span>
             )}
           </div>
-          <div>
-            <h3 className="text-white font-bold text-base">{agent?.name}</h3>
-            <p className="text-slate-400 text-sm">{agent?.role}</p>
-          </div>
+        </div>
+
+        {/* Online / Offline pill */}
+        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 ${
+          agent?.isOnline
+            ? 'bg-emerald-500/10 text-emerald-500'
+            : 'bg-slate-500/10 text-slate-400'
+        }`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${agent?.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`} />
+          {agent?.isOnline ? 'Online' : (agent?.lastSeen ? formatLastSeen(agent.lastSeen) : 'Offline')}
         </div>
       </div>
 
-      {/* Key Metrics Grid */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Icon name="CheckCircle2" size={14} color="rgb(148 163 184)" />
-            <span className="text-slate-400 text-xs">Tickets Solved</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-white font-bold text-lg">{agent?.ticketsSolved}</span>
-            <div className="flex items-center gap-1">
-              <Icon {...getTrendIcon(agent?.ticketsTrend)} size={12} />
-              <span className={`text-xs ${getTrendColor(agent?.ticketsTrend)}`}>
-                {agent?.ticketsTrend > 0 ? '+' : ''}{agent?.ticketsTrend}%
-              </span>
-            </div>
-          </div>
+      {/* ── Badges ── */}
+      {agent?.badges?.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {agent.badges.map((b, i) => <BadgeChip key={i} badge={b.badge} label={b.label} />)}
         </div>
+      )}
 
-        <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Icon name="Target" size={14} color="rgb(148 163 184)" />
-            <span className="text-slate-400 text-xs">FCR Rate</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-white font-bold text-lg">{agent?.fcrRate}%</span>
-            <div className="flex items-center gap-1">
-              <Icon {...getTrendIcon(agent?.fcrTrend)} size={12} />
-              <span className={`text-xs ${getTrendColor(agent?.fcrTrend)}`}>
-                {agent?.fcrTrend > 0 ? '+' : ''}{agent?.fcrTrend}%
-              </span>
-            </div>
-          </div>
+      {/* ── Performance Score bar ── */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-muted-foreground">Performance Score</span>
+          <span className="text-sm font-bold text-foreground">{perf}%</span>
         </div>
-
-        <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Icon name="Clock" size={14} color="rgb(148 163 184)" />
-            <span className="text-slate-400 text-xs">Avg Handle Time</span>
-          </div>
-          <span className="text-white font-bold text-lg">{agent?.avgHandleTime}m</span>
-        </div>
-
-        <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Icon name="Inbox" size={14} color="rgb(148 163 184)" />
-            <span className="text-slate-400 text-xs">Open Tickets</span>
-          </div>
-          <span className="text-white font-bold text-lg">{agent?.openTickets}</span>
-        </div>
-      </div>
-      {/* Performance Bar */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-slate-400 text-xs">7-Day Performance</span>
-          <span className="text-white font-semibold text-sm">{agent?.performanceScore}%</span>
-        </div>
-        <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-blue-600 to-blue-500 rounded-full transition-all duration-500"
-            style={{ width: `${agent?.performanceScore}%` }}
-          ></div>
+            className={`h-full bg-gradient-to-r ${getBarColor(perf)} rounded-full transition-all duration-700`}
+            style={{ width: `${perf}%` }}
+          />
         </div>
       </div>
-      {/* Footer Section */}
-      <div className="space-y-3 pt-3 border-t border-slate-700">
-        {/* CSAT Score */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {renderStars(agent?.csatScore)}
-            <span className="text-white font-semibold text-sm ml-1">{agent?.csatScore}%</span>
+
+      {/* ── Metrics Grid (2×2) ── */}
+      <div className="grid grid-cols-2 gap-2">
+
+        {/* Calls Handled */}
+        <div className="bg-muted/30 border border-border rounded-lg p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Icon name="Phone" size={12} className="text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground">Calls Handled</span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-foreground">{agent?.callsHandled ?? '—'}</span>
+            {agent?.callsTrend !== undefined && agent?.callsTrend !== 0 && (
+              <div className="flex items-center gap-0.5">
+                <Icon {...getTrendIcon(agent.callsTrend)} size={11} />
+                <span className={`text-[10px] ${getTrendClass(agent.callsTrend)}`}>
+                  {agent.callsTrend > 0 ? '+' : ''}{agent.callsTrend}%
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-1 gap-2">
-          <Button
-            onClick={() => onViewDetails?.(agent)}
-            className="w-full bg-transparent border border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-slate-500"
-          >
-            View Details
-          </Button>
+        {/* CSAT Score */}
+        <div className="bg-muted/30 border border-border rounded-lg p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Icon name="Star" size={12} className="text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground">CSAT Score</span>
+          </div>
+          <span className="text-base font-bold text-foreground">{csat}%</span>
+        </div>
+
+        {/* FCR Rate */}
+        <div className="bg-muted/30 border border-border rounded-lg p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Icon name="Target" size={12} className="text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground">FCR Rate</span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-foreground">{fcr}%</span>
+            {agent?.fcrTrend !== undefined && agent?.fcrTrend !== 0 && (
+              <div className="flex items-center gap-0.5">
+                <Icon {...getTrendIcon(agent.fcrTrend)} size={11} />
+                <span className={`text-[10px] ${getTrendClass(agent.fcrTrend)}`}>
+                  {agent.fcrTrend > 0 ? '+' : ''}{agent.fcrTrend}%
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Avg Handle Time */}
+        <div className="bg-muted/30 border border-border rounded-lg p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Icon name="Clock" size={12} className="text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground">Avg Handle</span>
+          </div>
+          <span className="text-base font-bold text-foreground">
+            {agent?.avgHandleTime ? `${agent.avgHandleTime}m` : '—'}
+          </span>
         </div>
       </div>
+
+      {/* ── CSAT mini-bar ── */}
+      <div className="pt-1 border-t border-border">
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+          <span>Customer Satisfaction</span>
+          <span className="font-semibold text-foreground">{csat}%</span>
+        </div>
+        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+          <div
+            className={`h-full bg-gradient-to-r ${getBarColor(csat)} rounded-full`}
+            style={{ width: `${csat}%` }}
+          />
+        </div>
+      </div>
+
     </div>
   );
 };

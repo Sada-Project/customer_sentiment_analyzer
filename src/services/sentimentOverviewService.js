@@ -8,147 +8,228 @@ function formatDuration(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-// ─── KPI Cards ────────────────────────────────────────────────────────────────
-export async function fetchKPIs(timePeriod = '24h') {
-  const { data, error } = await supabase
-    .from('kpi_snapshots')
-    .select('*')
-    .eq('time_period', timePeriod)
-    .order('recorded_at', { ascending: false });
-
-  if (error) throw error;
-
-  // Deduplicate: keep the latest snapshot per metric_key
-  const seen = new Set();
-  const unique = (data ?? []).filter((row) => {
-    if (seen.has(row.metric_key)) return false;
-    seen.add(row.metric_key);
-    return true;
-  });
-
-  return unique;
+// ─── Get start of today in ISO (local midnight → UTC) ─────────────────────────
+function todayStartISO() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
 }
 
-// ─── Sentiment Timeline Chart ─────────────────────────────────────────────────
+// ─── FILES PROCESSED TODAY ────────────────────────────────────────────────────
+// Counts completed call_recordings with call_timestamp >= today
+export async function fetchFilesProcessedToday() {
+  const { count, error } = await supabase
+    .from('call_recordings')
+    .select('id', { count: 'exact', head: true })
+    .gte('call_timestamp', todayStartISO())
+    .eq('status', 'completed');
+
+  if (error) throw new Error(`Files processed fetch failed: ${error.message}`);
+  return count ?? 0;
+}
+
+// ─── TRANSCRIPTION CONFIDENCE ─────────────────────────────────────────────────
+// Computes the average transcription_confidence from completed calls today.
+// Falls back to all completed calls if today has none.
+export async function fetchTranscriptionConfidence() {
+  // Try today first
+  const { data: todayData, error: todayErr } = await supabase
+    .from('call_recordings')
+    .select('transcription_confidence')
+    .gte('call_timestamp', todayStartISO())
+    .eq('status', 'completed')
+    .not('transcription_confidence', 'is', null);
+
+  if (todayErr) throw new Error(`Transcription confidence fetch failed: ${todayErr.message}`);
+
+  let rows = todayData ?? [];
+
+  // Fallback: if no calls today, use all completed calls
+  if (rows.length === 0) {
+    const { data: allData, error: allErr } = await supabase
+      .from('call_recordings')
+      .select('transcription_confidence')
+      .eq('status', 'completed')
+      .not('transcription_confidence', 'is', null)
+      .limit(200);
+
+    if (allErr) throw new Error(`Transcription confidence fallback failed: ${allErr.message}`);
+    rows = allData ?? [];
+  }
+
+  if (rows.length === 0) return null;
+
+  const avg = rows.reduce((sum, r) => sum + (r.transcription_confidence ?? 0), 0) / rows.length;
+  return Number(avg.toFixed(1));
+}
+
+// ─── REAL-TIME EMOTION TIMELINE ───────────────────────────────────────────────
+// Groups completed call_recordings by 3-hour time buckets for the last N hours.
+// Falls back to sentiment_timeline table if no call_recordings data exists.
 export async function fetchSentimentTimeline(hours = 24) {
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
+  // Primary: compute from actual call_recordings
+  const { data: callData, error: callErr } = await supabase
+    .from('call_recordings')
+    .select('call_timestamp, sentiment')
+    .gte('call_timestamp', since)
+    .eq('status', 'completed')
+    .not('sentiment', 'is', null)
+    .order('call_timestamp', { ascending: true });
+
+  if (!callErr && callData && callData.length > 0) {
+    // Group into 3-hour buckets
+    const buckets = {};
+    callData.forEach(row => {
+      const ts   = new Date(row.call_timestamp);
+      const hour = Math.floor(ts.getHours() / 3) * 3;
+      const key  = new Date(ts.getFullYear(), ts.getMonth(), ts.getDate(), hour).toISOString();
+      if (!buckets[key]) {
+        buckets[key] = { satisfied: 0, neutral: 0, frustrated: 0, angry: 0, interactions: 0 };
+      }
+      const b = buckets[key];
+      if (row.sentiment === 'satisfied')  b.satisfied++;
+      if (row.sentiment === 'neutral')    b.neutral++;
+      if (row.sentiment === 'frustrated') b.frustrated++;
+      if (row.sentiment === 'angry')      b.angry++;
+      b.interactions++;
+    });
+
+    const sorted = Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b));
+    return sorted.map(([key, counts]) => ({
+      time: new Date(key).toLocaleString('en-US', {
+        month:  hours > 24 ? 'short'   : undefined,
+        day:    hours > 24 ? 'numeric' : undefined,
+        hour:   '2-digit',
+        minute: hours > 24 ? undefined : '2-digit',
+        hour12: false,
+      }),
+      ...counts,
+    }));
+  }
+
+  // Fallback: read from sentiment_timeline table (seeded aggregate data)
   const { data, error } = await supabase
     .from('sentiment_timeline')
     .select('*')
     .gte('time_bucket', since)
     .order('time_bucket', { ascending: true });
 
-  if (error) throw error;
+  if (error) throw new Error(`Timeline fetch failed: ${error.message}`);
 
-  return (data ?? []).map((row) => ({
+  return (data ?? []).map(row => ({
     time: new Date(row.time_bucket).toLocaleString('en-US', {
-      month: hours > 24 ? 'short' : undefined,
-      day:   hours > 24 ? 'numeric' : undefined,
-      hour:  '2-digit',
+      month:  hours > 24 ? 'short'   : undefined,
+      day:    hours > 24 ? 'numeric' : undefined,
+      hour:   '2-digit',
       minute: hours > 24 ? undefined : '2-digit',
       hour12: false,
     }),
-    satisfied:    row.satisfied_count,
-    neutral:      row.neutral_count,
-    frustrated:   row.frustrated_count,
-    angry:        row.angry_count,
-    interactions: row.total_interactions,
+    satisfied:    row.satisfied_count    ?? 0,
+    neutral:      row.neutral_count      ?? 0,
+    frustrated:   row.frustrated_count   ?? 0,
+    angry:        row.angry_count        ?? 0,
+    interactions: row.total_interactions ?? 0,
   }));
 }
 
-// ─── Live Activity Feed ───────────────────────────────────────────────────────
-export async function fetchLiveActivity(limit = 10) {
-  const { data, error } = await supabase
-    .from('vw_live_activity_feed')
-    .select('*')
-    .limit(limit);
+// ─── EMOTION DISTRIBUTION ─────────────────────────────────────────────────────
+// Computes distribution from actual call_recordings.
+// Falls back to sentiment_distribution table if no records exist.
+export async function fetchSentimentDistribution() {
+  // Primary: compute from actual call_recordings (all completed)
+  const { data: callData, error: callErr } = await supabase
+    .from('call_recordings')
+    .select('sentiment')
+    .eq('status', 'completed')
+    .not('sentiment', 'is', null);
 
-  if (error) throw error;
+  if (!callErr && callData && callData.length > 0) {
+    const counts = { satisfied: 0, neutral: 0, frustrated: 0, angry: 0 };
+    callData.forEach(r => { if (counts[r.sentiment] !== undefined) counts[r.sentiment]++; });
+    const total = callData.length;
+    const order = ['satisfied', 'neutral', 'frustrated', 'angry'];
+    return order.map(name => ({
+      name,
+      value:      counts[name],
+      percentage: ((counts[name] / total) * 100).toFixed(1),
+    }));
+  }
 
-  return (data ?? []).map((row) => ({
-    id:         row.id,
-    callRef:    row.call_ref,
-    customer:   row.customer   ?? 'Unknown Customer',
-    customerId: row.customer_id ?? '—',
-    sentiment:  row.sentiment,
-    confidence: row.confidence != null ? Number(row.confidence).toFixed(0) : null,
-    timestamp:  row.timestamp,
-    duration:   formatDuration(row.duration_seconds),
-    status:     row.status,
-    // the view exposes first_message from call_transcript_segments
-    transcript: row.first_message ?? row.transcript_text ?? null,
-    agentName:  row.agent_name,
-    interactionType: row.interaction_type,
-  }));
-}
-
-// ─── Sentiment Distribution ───────────────────────────────────────────────────
-export async function fetchSentimentDistribution(date) {
-  // Try today first; fall back to the most recent date in the table
-  const targetDate = date ?? new Date().toISOString().split('T')[0];
-
-  const { data, error } = await supabase
+  // Fallback: read from sentiment_distribution table
+  const today = new Date().toISOString().split('T')[0];
+  let { data, error } = await supabase
     .from('sentiment_distribution')
     .select('*')
-    .eq('period_date', targetDate);
+    .eq('period_date', today);
 
-  if (error) throw error;
+  if (error) throw new Error(`Distribution fetch failed: ${error.message}`);
 
-  // If today has no data yet, grab the latest available date
+  // If today has no data, grab the most recent date
   if (!data || data.length === 0) {
-    const { data: latest, error: latestErr } = await supabase
+    const fallback = await supabase
       .from('sentiment_distribution')
       .select('*')
       .order('period_date', { ascending: false })
       .limit(4);
 
-    if (latestErr) throw latestErr;
-
-    return (latest ?? []).map((row) => ({
-      name:       row.sentiment,
-      value:      row.call_count,
-      percentage: Number(row.percentage).toFixed(1),
-    }));
+    if (fallback.error) throw new Error(`Distribution fallback failed: ${fallback.error.message}`);
+    data = fallback.data ?? [];
   }
 
-  return data.map((row) => ({
+  return (data ?? []).map(row => ({
     name:       row.sentiment,
     value:      row.call_count,
     percentage: Number(row.percentage).toFixed(1),
   }));
 }
 
-// ─── Quick Stats (new) ────────────────────────────────────────────────────────
-// Returns: { totalCallsToday, activeAgents, avgSentimentToday, pendingQueue }
-export async function fetchQuickStats() {
-  const today = new Date().toISOString().split('T')[0];
+// ─── LIVE ACTIVITY FEED (kept for potential future use) ───────────────────────
+export async function fetchLiveActivity(limit = 10) {
+  let { data, error } = await supabase
+    .from('vw_live_activity_feed')
+    .select('*')
+    .limit(limit);
 
-  const [callsRes, agentsRes, queueRes] = await Promise.all([
-    supabase
+  if (error) {
+    console.warn('[sentimentOverview] View unavailable, falling back:', error.message);
+    const fallback = await supabase
       .from('call_recordings')
-      .select('id, sentiment_score', { count: 'exact', head: false })
-      .gte('call_timestamp', today + 'T00:00:00Z')
-      .eq('status', 'completed'),
-    supabase
-      .from('agents')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_online', true),
-    supabase
-      .from('call_recordings')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['pending', 'processing']),
-  ]);
+      .select('id, call_ref, sentiment, sentiment_confidence, call_timestamp, duration_seconds, status, interaction_type, transcript_text')
+      .in('status', ['completed', 'processing'])
+      .order('call_timestamp', { ascending: false })
+      .limit(limit);
 
-  const calls   = callsRes.data ?? [];
-  const avgScore = calls.length > 0
-    ? (calls.reduce((sum, c) => sum + (c.sentiment_score ?? 0), 0) / calls.length).toFixed(1)
-    : null;
+    if (fallback.error) throw new Error(`Activity feed failed: ${fallback.error.message}`);
+    return (fallback.data ?? []).map(row => ({
+      id:              row.id,
+      callRef:         row.call_ref,
+      customer:        'Customer',
+      customerId:      '—',
+      sentiment:       row.sentiment,
+      confidence:      row.sentiment_confidence != null ? Number(row.sentiment_confidence).toFixed(0) : null,
+      timestamp:       row.call_timestamp,
+      duration:        formatDuration(row.duration_seconds),
+      status:          row.status,
+      transcript:      row.transcript_text ?? null,
+      agentName:       null,
+      interactionType: row.interaction_type,
+    }));
+  }
 
-  return {
-    totalCallsToday: callsRes.count ?? calls.length,
-    activeAgents:    agentsRes.count ?? 0,
-    avgSentimentToday: avgScore,
-    pendingQueue:    queueRes.count ?? 0,
-  };
+  return (data ?? []).map(row => ({
+    id:              row.id,
+    callRef:         row.call_ref,
+    customer:        row.customer        ?? 'Unknown Customer',
+    customerId:      row.customer_id     ?? '—',
+    sentiment:       row.sentiment,
+    confidence:      row.confidence != null ? Number(row.confidence).toFixed(0) : null,
+    timestamp:       row.timestamp,
+    duration:        formatDuration(row.duration_seconds),
+    status:          row.status,
+    transcript:      row.first_message   ?? row.transcript_text ?? null,
+    agentName:       row.agent_name,
+    interactionType: row.interaction_type,
+  }));
 }

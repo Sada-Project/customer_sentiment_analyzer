@@ -335,9 +335,13 @@ const RecentAnalysis = ({ analyses = [] }) => {
                   <div className="flex-1 min-w-0">
                     {/* File name + sentiment badge */}
                     <div className="flex items-start justify-between gap-3 mb-1">
-                      <h3 className="text-sm font-medium text-foreground truncate">
+                      <button
+                        onClick={() => analysis.id && navigate(`/call-details/${analysis.id}`)}
+                        className="text-sm font-medium text-foreground truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer"
+                        title="View call details"
+                      >
                         {analysis.fileName}
-                      </h3>
+                      </button>
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0 ${cfg.color}`}>
                         {cfg.label}
                       </span>

@@ -343,7 +343,18 @@ const CallRecordings = () => {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-3 mb-1">
-                          <h3 className="text-sm font-semibold text-foreground truncate">{a.fileName}</h3>
+                          {/* Call name — click to open details (only in normal mode) */}
+                          {selectMode ? (
+                            <h3 className="text-sm font-semibold text-foreground truncate">{a.fileName}</h3>
+                          ) : (
+                            <button
+                              onClick={() => navigate(`/call-details/${a.id}`)}
+                              className="text-sm font-semibold text-foreground truncate text-left hover:text-primary hover:underline transition-colors"
+                              title="View call details"
+                            >
+                              {a.fileName}
+                            </button>
+                          )}
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0 ${cfg.color}`}>{cfg.label}</span>
                         </div>
                         <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
@@ -358,6 +369,7 @@ const CallRecordings = () => {
                           <div className="flex items-center gap-2">
                             <Button variant="outline" size="xs" iconName="Play" iconPosition="left" onClick={() => a.audioUrl ? setActivePlayer(a) : alert('Audio not available.')} disabled={!a.audioUrl}>Play</Button>
                             <Button variant="outline" size="xs" iconName="FileText" iconPosition="left" onClick={() => setActiveTranscript(a)} disabled={!a.transcript}>Transcript</Button>
+                            <Button variant="outline" size="xs" iconName="ExternalLink" iconPosition="left" onClick={() => navigate(`/call-details/${a.id}`)}>Details</Button>
                             <Button variant="ghost" size="xs" iconName={sharedId === a.id ? 'Check' : 'Share2'} iconPosition="left" onClick={() => handleShare(a)}>
                               {sharedId === a.id ? 'Copied!' : 'Share'}
                             </Button>
