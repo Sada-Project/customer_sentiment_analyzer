@@ -17,17 +17,13 @@ import {
 // ─── Icon map for KPI cards (metric_key → icon) ───────────────────────────────
 const KPI_ICON_MAP = {
   overall_sentiment:  { icon: 'TrendingUp',  title: 'Overall Sentiment Score' },
-  files_processed:    { icon: 'FileCheck',   title: 'Files Processed'         },
-  satisfaction_trend: { icon: 'Heart',       title: 'Satisfaction Trend'      },
-  processing_accuracy:{ icon: 'Target',      title: 'Processing Accuracy'     },
+  files_processed:    { icon: 'FileCheck',   title: 'Files Processed Today'   },
 };
 
 // ─── Fallback KPIs (shown while loading or on error) ─────────────────────────
 const FALLBACK_KPIS = [
   { title: 'Overall Sentiment Score', value: '—', change: '—', changeType: 'neutral', icon: 'TrendingUp',  sparklineData: [] },
-  { title: 'Files Processed',         value: '—', change: '—', changeType: 'neutral', icon: 'FileCheck',   sparklineData: [] },
-  { title: 'Satisfaction Trend',      value: '—', change: '—', changeType: 'neutral', icon: 'Heart',       sparklineData: [] },
-  { title: 'Processing Accuracy',     value: '—', change: '—', changeType: 'neutral', icon: 'Target',      sparklineData: [] },
+  { title: 'Files Processed Today',   value: '—', change: '—', changeType: 'neutral', icon: 'FileCheck',   sparklineData: [] },
 ];
 
 const SentimentOverview = () => {
@@ -64,25 +60,28 @@ const SentimentOverview = () => {
 
         // Map KPI snapshots → card format
         if (kpis.length > 0) {
-          setKpiData(kpis.map((row) => {
-            const meta = KPI_ICON_MAP[row.metric_key] ?? {};
-            const isPercent = row.metric_unit === '%';
-            const val  = isPercent
-              ? `${Number(row.metric_value).toFixed(1)}%`
-              : Number(row.metric_value).toLocaleString();
-            const unit = isPercent ? '%' : '';
-            const chg  = row.change_value != null
-              ? `${row.change_value > 0 ? '+' : ''}${Number(row.change_value).toFixed(1)}${unit}`
-              : '—';
-            return {
-              title:        meta.title ?? row.metric_label,
-              value:        val,
-              change:       chg,
-              changeType:   row.change_type ?? 'neutral',
-              icon:         meta.icon ?? 'BarChart2',
-              sparklineData: Array.isArray(row.sparkline_data) ? row.sparkline_data : [],
-            };
-          }));
+          const EXCLUDED_KEYS = ['processing_accuracy', 'satisfaction_trend'];
+          setKpiData(kpis
+            .filter((row) => !EXCLUDED_KEYS.includes(row.metric_key))
+            .map((row) => {
+              const meta = KPI_ICON_MAP[row.metric_key] ?? {};
+              const unit = row.metric_unit === '%' ? '%' : '';
+              const val  = row.metric_unit === '%'
+                ? `${Number(row.metric_value).toFixed(1)}%`
+                : Number(row.metric_value).toLocaleString();
+              const chg  = row.change_value != null
+                ? `${row.change_value > 0 ? '+' : ''}${Number(row.change_value).toFixed(1)}${unit}`
+                : '—';
+              return {
+                title:        meta.title ?? row.metric_label,
+                value:        val,
+                change:       chg,
+                changeType:   row.change_type ?? 'neutral',
+                icon:         meta.icon ?? 'BarChart2',
+                sparklineData: Array.isArray(row.sparkline_data) ? row.sparkline_data : [],
+              };
+            })
+          );
         }
 
         if (timeline.length    > 0) setTimelineData(timeline);
@@ -192,7 +191,7 @@ const SentimentOverview = () => {
           <GlobalControls dateRange={dateRange} onDateRangeChange={setDateRange} />
 
           {/* KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
             {kpiData.map((kpi) => (
               <KPICard key={kpi.title} {...kpi} />
             ))}
