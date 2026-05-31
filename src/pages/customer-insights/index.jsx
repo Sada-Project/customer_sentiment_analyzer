@@ -1,17 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Header from '../../components/ui/Header';
-import MetricCard from './components/MetricCard';
 import FilterPanel from './components/FilterPanel';
 import SentimentHeatmap from './components/SentimentHeatmap';
 import SentimentAlertFeed from './components/SentimentAlertFeed';
-import CustomerSentimentTable from './components/CustomerSentimentTable';
 import TopicBubbleChart from './components/TopicBubbleChart';
 import KeywordWordCloud from './components/KeywordWordCloud';
 import TrendAlertWidget from './components/TrendAlertWidget';
 import Icon from '../../components/AppIcon';
 import {
-  fetchCustomers,
-  fetchCustomerMetrics,
   fetchSentimentHeatmap,
   fetchSentimentAlerts,
   fetchTopicFrequency,
@@ -22,8 +18,6 @@ import {
 const CustomerInsights = () => {
   const [lastUpdate, setLastUpdate]         = useState(new Date());
   const [filters, setFilters]               = useState({ segment: 'all', interactionType: 'all', sentimentThreshold: 'all', period: '30d' });
-  const [customers, setCustomers]           = useState([]);
-  const [metrics, setMetrics]               = useState([]);
   const [heatmap, setHeatmap]               = useState([]);
   const [alerts, setAlerts]                 = useState([]);
   const [topics, setTopics]                 = useState([]);
@@ -36,17 +30,13 @@ const CustomerInsights = () => {
     try {
       setLoading(true);
       setError(null);
-      const [cust, met, heat, alts, tops, kws, trends] = await Promise.all([
-        fetchCustomers({ segment: filters.segment, interactionType: filters.interactionType, sentimentThreshold: filters.sentimentThreshold }),
-        fetchCustomerMetrics(),
+      const [heat, alts, tops, kws, trends] = await Promise.all([
         fetchSentimentHeatmap(),
         fetchSentimentAlerts(),
         fetchTopicFrequency(),
         fetchKeywords(),
         fetchTrendAlerts(),
       ]);
-      setCustomers(cust);
-      setMetrics(met);
       setHeatmap(heat);
       setAlerts(alts);
       setTopics(tops);
@@ -58,7 +48,7 @@ const CustomerInsights = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters.segment, filters.interactionType, filters.sentimentThreshold]);
+  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -72,22 +62,6 @@ const CustomerInsights = () => {
   const handleApplyFilters  = () => loadData();
   const handleResetFilters  = () => setFilters({ segment: 'all', interactionType: 'all', sentimentThreshold: 'all', period: '30d' });
 
-  // Map DB metric rows → MetricCard props
-  const metricsData = metrics.length > 0
-    ? metrics.map(row => ({
-        title:      row.metric_label,
-        value:      row.metric_unit === '%'
-          ? `${Number(row.metric_value).toFixed(1)}%`
-          : Number(row.metric_value).toLocaleString(),
-        change:     row.change_value != null ? `${row.change_value > 0 ? '+' : ''}${Number(row.change_value).toFixed(1)}%` : '—',
-        changeType: row.change_type ?? 'neutral',
-        icon:       row.metric_key === 'satisfaction_trend' ? 'Heart' : 'TrendingUp',
-        iconColor:  row.metric_key === 'satisfaction_trend' ? 'var(--color-success)' : 'var(--color-primary)',
-      }))
-    : [
-        { title: 'Customer Satisfaction Score', value: '78.5%', change: '+5.2%', changeType: 'positive', icon: 'Heart',      iconColor: 'var(--color-success)' },
-        { title: 'Sentiment Velocity',           value: '+12.3%', change: '+3.1%', changeType: 'positive', icon: 'TrendingUp', iconColor: 'var(--color-primary)' },
-      ];
 
   return (
     <>
@@ -112,9 +86,6 @@ const CustomerInsights = () => {
 
           <FilterPanel filters={filters} onFilterChange={handleFilterChange} onApplyFilters={handleApplyFilters} onResetFilters={handleResetFilters} />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {metricsData.map((metric) => <MetricCard key={metric.title} {...metric} />)}
-          </div>
 
           <div className="mb-6">
             <div className="flex items-center gap-3 mb-4">
@@ -136,7 +107,6 @@ const CustomerInsights = () => {
             <div className="lg:col-span-1"><SentimentAlertFeed alerts={alerts} /></div>
           </div>
 
-          <div><CustomerSentimentTable customers={customers} /></div>
         </div>
       </main>
     </>
