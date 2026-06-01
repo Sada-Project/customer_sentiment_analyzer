@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Header from '../../components/ui/Header';
-import FilterPanel from './components/FilterPanel';
 import SentimentHeatmap from './components/SentimentHeatmap';
-import SentimentAlertFeed from './components/SentimentAlertFeed';
 import TopicBubbleChart from './components/TopicBubbleChart';
 import KeywordWordCloud from './components/KeywordWordCloud';
 import TrendAlertWidget from './components/TrendAlertWidget';
 import Icon from '../../components/AppIcon';
 import {
   fetchSentimentHeatmap,
-  fetchSentimentAlerts,
   fetchTopicFrequency,
   fetchKeywords,
   fetchTrendAlerts,
@@ -17,9 +14,7 @@ import {
 
 const CustomerInsights = () => {
   const [lastUpdate, setLastUpdate]         = useState(new Date());
-  const [filters, setFilters]               = useState({ segment: 'all', interactionType: 'all', sentimentThreshold: 'all', period: '30d' });
   const [heatmap, setHeatmap]               = useState([]);
-  const [alerts, setAlerts]                 = useState([]);
   const [topics, setTopics]                 = useState([]);
   const [keywords, setKeywords]             = useState([]);
   const [trendAlerts, setTrendAlerts]       = useState([]);
@@ -30,15 +25,13 @@ const CustomerInsights = () => {
     try {
       setLoading(true);
       setError(null);
-      const [heat, alts, tops, kws, trends] = await Promise.all([
+      const [heat, tops, kws, trends] = await Promise.all([
         fetchSentimentHeatmap(),
-        fetchSentimentAlerts(),
         fetchTopicFrequency(),
         fetchKeywords(),
         fetchTrendAlerts(),
       ]);
       setHeatmap(heat);
-      setAlerts(alts);
       setTopics(tops);
       setKeywords(kws);
       setTrendAlerts(trends);
@@ -58,8 +51,6 @@ const CustomerInsights = () => {
     return () => clearInterval(interval);
   }, [loadData]);
 
-  const handleFilterChange = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
-  const handleResetFilters  = () => setFilters({ segment: 'all', interactionType: 'all', sentimentThreshold: 'all', period: '30d' });
 
 
   return (
@@ -83,7 +74,6 @@ const CustomerInsights = () => {
             </div>
           </div>
 
-          <FilterPanel filters={filters} onFilterChange={handleFilterChange} onResetFilters={handleResetFilters} />
 
 
           <div className="mb-6">
@@ -91,7 +81,6 @@ const CustomerInsights = () => {
               <div className="bg-blue-500/20 rounded-lg p-2"><Icon name="BarChart3" size={24} className="text-blue-400" /></div>
               <div>
                 <h2 className="text-2xl font-bold text-white">Topic &amp; Keyword Trends</h2>
-                <p className="text-slate-400 text-sm">AI-powered analysis of recurring patterns across all processed calls</p>
               </div>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
@@ -101,9 +90,8 @@ const CustomerInsights = () => {
             <div className="mb-6"><KeywordWordCloud keywords={keywords} loading={loading} error={error} /></div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <div className="lg:col-span-2"><SentimentHeatmap heatmapData={heatmap} /></div>
-            <div className="lg:col-span-1"><SentimentAlertFeed alerts={alerts} /></div>
+          <div className="mb-6">
+            <SentimentHeatmap heatmapData={heatmap} loading={loading} error={error} />
           </div>
 
         </div>

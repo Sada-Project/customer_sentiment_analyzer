@@ -4,7 +4,9 @@ import Header from '../../components/ui/Header';
 import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
 import GeminiAnalysisPanel from '../../components/GeminiAnalysisPanel';
+import SentimentAlertFeed from '../customer-insights/components/SentimentAlertFeed';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { supabase } from '../../lib/supabase';
 import {
   fetchCallById,
   fetchCallByRef,
@@ -23,6 +25,7 @@ const CallDetails = () => {
   const [transcript,  setTranscript]  = useState([]);
   const [topics,      setTopics]      = useState([]);
   const [qaResults,   setQaResults]   = useState([]);
+  const [callAlerts,  setCallAlerts]  = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState(null);
 
@@ -40,21 +43,40 @@ const CallDetails = () => {
       .then(async call => {
         if (cancelled || !call) return;
         setCallData(call);
-        const [trans, tops, qa] = await Promise.all([
+        const [trans, tops, qa, alertsRes] = await Promise.all([
           fetchTranscript(call.id),
           fetchCallTopics(call.id),
           fetchCallQA(call.id),
+          // Fetch alerts linked to this specific call recording
+          supabase
+            .from('alerts')
+            .select('*')
+            .or(`call_recording_id.eq.${call.id},description.ilike.%${call.call_ref ?? ''}%`)
+            .order('created_at', { ascending: false })
+            .limit(10),
         ]);
         if (cancelled) return;
         setTranscript(trans);
         setTopics(tops);
         setQaResults(qa);
+        setCallAlerts(alertsRes.data ?? []);
       })
       .catch(err => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
   }, [callId]);
+
+  const refreshAlerts = async () => {
+    if (!callData?.id) return;
+    const { data } = await supabase
+      .from('alerts')
+      .select('*')
+      .or(`call_recording_id.eq.${callData.id},description.ilike.%${callData.call_ref ?? ''}%`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    setCallAlerts(data ?? []);
+  };
 
   const getSentimentColor = s => ({ satisfied: 'bg-emerald-500', neutral: 'bg-slate-500', frustrated: 'bg-amber-500', angry: 'bg-rose-500' }[s] ?? 'bg-slate-500');
   const getSentimentBadge = s => {
@@ -429,19 +451,28 @@ const CallDetails = () => {
             )}
           </div>
 
-          {/* Gemini AI Analysis Panel */}
-          <div className="mt-6">
-            <GeminiAnalysisPanel
-              transcript={displayTranscript.map(m => `${m.speaker === 'agent' ? 'Agent' : 'Customer'}: ${m.message}`).join('\n')}
-              callMeta={{
-                customerName:    customer?.full_name ?? customer?.company_name,
-                agentName:       agent?.name,
-                interactionType: callData?.interaction_type,
-                duration:        callData?.duration_seconds
-                  ? `${Math.floor(callData.duration_seconds / 60)}:${String(callData.duration_seconds % 60).padStart(2, '0')}`
-                  : undefined,
-              }}
-            />
+          {/* Gemini AI Analysis + Emotion Alerts — side by side */}
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <GeminiAnalysisPanel
+                transcript={displayTranscript.map(m => `${m.speaker === 'agent' ? 'Agent' : 'Customer'}: ${m.message}`).join('\n')}
+                callMeta={{
+                  customerName:    customer?.full_name ?? customer?.company_name,
+                  agentName:       agent?.name,
+                  interactionType: callData?.interaction_type,
+                  duration:        callData?.duration_seconds
+                    ? `${Math.floor(callData.duration_seconds / 60)}:${String(callData.duration_seconds % 60).padStart(2, '0')}`
+                    : undefined,
+                }}
+              />
+            </div>
+            <div className="lg:col-span-1">
+              <SentimentAlertFeed
+                alerts={callAlerts}
+                loading={loading}
+                onRefresh={refreshAlerts}
+              />
+            </div>
           </div>
 
         </div>

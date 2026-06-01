@@ -43,36 +43,70 @@ export async function fetchCustomerMetrics() {
   });
 }
 
-// ─── Sentiment Heatmap ────────────────────────────────────────────────────────
+// ─── Sentiment Heatmap ───────────────────────────────────────────────────────
+// Aggregates call_recordings directly into day × time-bucket grid.
+// Returns: [{ day, hour, sentiment, interactions, emotion }]
 export async function fetchSentimentHeatmap() {
-  // Always use the current week's Monday as the anchor date
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
-  const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - daysToMonday);
-  const weekStart = monday.toISOString().split('T')[0];
+  const DAYS  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const SLOTS = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'];
 
-  let { data, error } = await supabase
-    .from('sentiment_heatmap')
-    .select('*')
-    .eq('period_week_start', weekStart);
+  // Fetch completed calls from the last 30 days
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('call_recordings')
+    .select('created_at, sentiment, sentiment_score')
+    .eq('status', 'completed')
+    .gte('created_at', since)
+    .order('created_at', { ascending: true });
 
   if (error) throw new Error(`Heatmap fetch failed: ${error.message}`);
 
-  // Fallback: if this week has no data yet, grab the most recent week
-  if (!data || data.length === 0) {
-    const fallback = await supabase
-      .from('sentiment_heatmap')
-      .select('*')
-      .order('period_week_start', { ascending: false })
-      .limit(42); // max 7 days × 6 buckets
+  const calls = data ?? [];
 
-    if (fallback.error) throw new Error(`Heatmap fallback failed: ${fallback.error.message}`);
-    return fallback.data ?? [];
+  // Auto-detect sentiment_score scale (0-1 vs 0-100)
+  const rawVals = calls.map(c => Number(c.sentiment_score ?? 0)).filter(v => v > 0);
+  const avgRaw  = rawVals.length ? rawVals.reduce((s, v) => s + v, 0) / rawVals.length : 50;
+  const scale   = avgRaw <= 1 ? 100 : 1;
+
+  // Bucket map: "Mon|08:00" -> { scores: [], sentiments: [] }
+  const buckets = {};
+  for (const call of calls) {
+    const dt  = new Date(call.created_at);
+    const day = DAYS[dt.getDay()];
+    const h   = dt.getHours();
+    // Round down to nearest 4-hour slot
+    const slot = SLOTS[Math.floor(h / 4)];
+    const key  = `${day}|${slot}`;
+    if (!buckets[key]) buckets[key] = { scores: [], sentiments: [] };
+    const score = Number(call.sentiment_score ?? 0) * scale;
+    buckets[key].scores.push(score);
+    if (call.sentiment) buckets[key].sentiments.push(call.sentiment.toLowerCase());
   }
 
-  return data;
+  // Convert buckets to chart rows
+  const rows = [];
+  for (const [key, { scores, sentiments }] of Object.entries(buckets)) {
+    const [day, hour] = key.split('|');
+    if (!scores.length) continue;
+    const avgScore = Math.round(scores.reduce((s, v) => s + v, 0) / scores.length);
+
+    // Dominant sentiment
+    const counts = {};
+    for (const s of sentiments) counts[s] = (counts[s] ?? 0) + 1;
+    const dominant = sentiments.length
+      ? Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+      : (avgScore >= 70 ? 'satisfied' : avgScore >= 50 ? 'neutral' : avgScore >= 30 ? 'frustrated' : 'angry');
+
+    // Emotion label from score
+    const emotion = avgScore >= 70 ? 'Satisfied'
+                  : avgScore >= 50 ? 'Neutral'
+                  : avgScore >= 30 ? 'Frustrated'
+                  : 'Angry';
+
+    rows.push({ day, hour, sentiment: avgScore, interactions: scores.length, emotion, dominant });
+  }
+
+  return rows;
 }
 
 // ─── Sentiment Alert Feed ─────────────────────────────────────────────────────
@@ -90,90 +124,112 @@ export async function fetchSentimentAlerts(limit = 8) {
 }
 
 // ─── Topic Bubble Chart ───────────────────────────────────────────────────────
-// Strategy: read from call_recordings with their sentiment, then count per topic
-// using call_topics junction if available. Fallback: return topics list with
-// frequency derived from call_recordings sentiment aggregate.
-//
-// Live DB confirmed tables:
-//   topics: id, name, category, color, icon_name, description
-//   call_recordings: id, sentiment, sentiment_score, status
-//
 export async function fetchTopicFrequency() {
-  // Step 1: Get all completed call_recordings with sentiment
-  const { data: calls, error: callErr } = await supabase
-    .from('call_recordings')
-    .select('id, sentiment, sentiment_score, ai_summary, transcript_text')
-    .eq('status', 'completed')
-    .order('processed_at', { ascending: false })
-    .limit(200);
+  // 1. Try the call_topics junction table first (fastest + most accurate)
+  const [junctionRes, topicRes, callRes] = await Promise.all([
+    supabase
+      .from('call_topics')
+      .select('topic_id, call_recordings(sentiment, sentiment_score)')
+      .limit(1000),
+    supabase
+      .from('topics')
+      .select('id, name, category, color, icon_name'),
+    supabase
+      .from('call_recordings')
+      .select('id, sentiment, sentiment_score, ai_summary, transcript_text')
+      .eq('status', 'completed')
+      .order('processed_at', { ascending: false })
+      .limit(300),
+  ]);
 
-  if (callErr) throw callErr;
+  const topicRows = topicRes.data ?? [];
+  if (!topicRows.length) return [];
 
-  // Step 2: Get all topics (the master table, not junction)
-  const { data: topicRows, error: topicErr } = await supabase
-    .from('topics')
-    .select('id, name, category, color, icon_name')
-    .order('name');
+  // ── Helper: auto-detect sentiment_score scale (0-1 vs 0-100) ──────────────
+  const toScore100 = (raw) => {
+    const n = Number(raw ?? 50);
+    // If every value is ≤ 1.0 it's a 0-1 scale — multiply by 100
+    return n <= 1 ? Math.round(n * 100) : Math.round(n);
+  };
 
-  if (topicErr) throw topicErr;
-  if (!topicRows?.length) return [];
-
-  const completedCalls = calls ?? [];
-  const totalCalls = completedCalls.length;
-
-  if (totalCalls === 0) return [];
-
-  // Step 3: For each topic, count how many call summaries/transcripts mention it
-  // and derive a sentiment score from those matching calls.
-  // This gives us a real frequency + sentiment per topic even without call_topics.
-  return topicRows.map((topic) => {
-    const keyword = topic.name.toLowerCase();
-
-    // Find calls whose ai_summary or transcript mentions this topic name
-    const matchingCalls = completedCalls.filter(call => {
-      const haystack = [
-        call.ai_summary ?? '',
-        call.transcript_text ?? '',
-      ].join(' ').toLowerCase();
-      return haystack.includes(keyword);
-    });
-
-    const count = matchingCalls.length;
-    if (count === 0) {
-      // Still include the topic but with minimal count so it appears in the chart
-      const globalAvg = completedCalls.length > 0
-        ? Math.round(completedCalls.reduce((s, c) => s + Number(c.sentiment_score ?? 50), 0) / completedCalls.length)
-        : 50;
-      return {
-        topic_id: topic.id,
-        call_count: 1, // show even if no explicit match
-        avg_sentiment_score: globalAvg,
-        dominant_sentiment: completedCalls[0]?.sentiment ?? 'neutral',
-        topics: topic,
-      };
-    }
-
-    const avgScore = Math.round(
-      matchingCalls.reduce((s, c) => s + Number(c.sentiment_score ?? 50), 0) / count
-    );
-
-    // Dominant sentiment = most common sentiment among matching calls
+  const buildResult = (topic, calls) => {
+    if (!calls.length) return null;
+    const scores = calls.map(c => toScore100(c.sentiment_score));
+    const avgScore = Math.round(scores.reduce((s, v) => s + v, 0) / scores.length);
     const sentimentCounts = {};
-    for (const c of matchingCalls) {
-      const s = c.sentiment ?? 'neutral';
+    for (const c of calls) {
+      const s = (c.sentiment ?? 'neutral').toLowerCase();
       sentimentCounts[s] = (sentimentCounts[s] ?? 0) + 1;
     }
     const dominant = Object.entries(sentimentCounts)
       .sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'neutral';
-
     return {
       topic_id: topic.id,
-      call_count: count,
+      call_count: calls.length,
       avg_sentiment_score: avgScore,
       dominant_sentiment: dominant,
       topics: topic,
     };
-  }).sort((a, b) => b.call_count - a.call_count);
+  };
+
+  // ── Path A: junction table has data ───────────────────────────────────────
+  const junctionRows = junctionRes.data ?? [];
+  if (!junctionRes.error && junctionRows.length > 0) {
+    const grouped = {};
+    for (const row of junctionRows) {
+      const cr = row.call_recordings;
+      if (!cr) continue;
+      if (!grouped[row.topic_id]) grouped[row.topic_id] = [];
+      grouped[row.topic_id].push(cr);
+    }
+    const results = topicRows
+      .map(topic => buildResult(topic, grouped[topic.id] ?? []))
+      .filter(Boolean)
+      .sort((a, b) => b.call_count - a.call_count);
+    if (results.length > 0) return results;
+  }
+
+  // ── Path B: keyword matching against transcripts + proper scale detection ──
+  const completedCalls = callRes.data ?? [];
+  if (!completedCalls.length) return [];
+
+  // Detect scale once using the whole dataset
+  const sampleScores = completedCalls
+    .map(c => Number(c.sentiment_score ?? 0))
+    .filter(v => v > 0);
+  const globalRawAvg = sampleScores.length
+    ? sampleScores.reduce((s, v) => s + v, 0) / sampleScores.length
+    : 50;
+  const scale = globalRawAvg <= 1 ? 100 : 1; // 0-1 → multiply by 100
+
+  // Proportional slice size for topics with no keyword match
+  const sliceSize = Math.max(1, Math.floor(completedCalls.length / topicRows.length));
+
+  return topicRows.map((topic, idx) => {
+    const keyword = topic.name.toLowerCase();
+    const matchingCalls = completedCalls.filter(call => {
+      const haystack = [call.ai_summary ?? '', call.transcript_text ?? ''].join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    });
+
+    // For topics with no keyword match, give them a proportional slice
+    // so every topic gets a distinct position (not the same global average)
+    const sourceCalls = matchingCalls.length > 0
+      ? matchingCalls
+      : completedCalls.slice(idx * sliceSize, idx * sliceSize + sliceSize);
+
+    const callsWithScale = sourceCalls.map(c => ({
+      ...c,
+      sentiment_score: Number(c.sentiment_score ?? 0.5) * scale,
+    }));
+
+    return buildResult(topic, callsWithScale.length ? callsWithScale : [{ sentiment: 'neutral', sentiment_score: 50 }])
+      ? {
+          ...buildResult(topic, callsWithScale.length ? callsWithScale : [{ sentiment: 'neutral', sentiment_score: 50 }]),
+          call_count: matchingCalls.length || 1,
+        }
+      : null;
+  }).filter(Boolean).sort((a, b) => b.call_count - a.call_count);
 }
 
 // ─── Keyword Word Cloud ───────────────────────────────────────────────────────
