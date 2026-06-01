@@ -124,22 +124,30 @@ export async function fetchSentimentAlerts(limit = 8) {
 }
 
 // ─── Topic Bubble Chart ───────────────────────────────────────────────────────
-export async function fetchTopicFrequency() {
+export async function fetchTopicFrequency(hoursBack = null) {
+  // Optional time window filter
+  const since = hoursBack
+    ? new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString()
+    : null;
+
   // 1. Try the call_topics junction table first (fastest + most accurate)
+  let callQuery = supabase
+    .from('call_recordings')
+    .select('id, sentiment, sentiment_score, ai_summary, transcript_text')
+    .eq('status', 'completed')
+    .order('processed_at', { ascending: false })
+    .limit(300);
+  if (since) callQuery = callQuery.gte('created_at', since);
+
+  let junctionQuery = supabase
+    .from('call_topics')
+    .select('topic_id, call_recordings(sentiment, sentiment_score, created_at)')
+    .limit(1000);
+
   const [junctionRes, topicRes, callRes] = await Promise.all([
-    supabase
-      .from('call_topics')
-      .select('topic_id, call_recordings(sentiment, sentiment_score)')
-      .limit(1000),
-    supabase
-      .from('topics')
-      .select('id, name, category, color, icon_name'),
-    supabase
-      .from('call_recordings')
-      .select('id, sentiment, sentiment_score, ai_summary, transcript_text')
-      .eq('status', 'completed')
-      .order('processed_at', { ascending: false })
-      .limit(300),
+    junctionQuery,
+    supabase.from('topics').select('id, name, category, color, icon_name'),
+    callQuery,
   ]);
 
   const topicRows = topicRes.data ?? [];
@@ -252,15 +260,161 @@ export async function fetchKeywords(limit = 50) {
   }));
 }
 
-// ─── Trend Alert Widget ───────────────────────────────────────────────────────
-export async function fetchTrendAlerts(limit = 5) {
-  const { data, error } = await supabase
-    .from('trend_alerts')
-    .select('*')
-    .eq('is_active', true)
-    .order('detected_at', { ascending: false })
-    .limit(limit);
+// ─── Rising Topics — Voice Analysis Pipeline ──────────────────────────────────
+// Counts how many times each topic was mentioned in recent hours.
+// Uses sliding windows: last 1 h → 6 h → 24 h → all time (fallback).
+// Severity score 0-100 combines frequency rank + negative-sentiment ratio.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function fetchRisingTopics(limit = 5) {
+  const NEGATIVE_SENTIMENTS = new Set(['frustrated', 'angry']);
+  const CATEGORY_ICONS = {
+    billing:   'DollarSign', technical: 'Wrench', service: 'Headphones',
+    product:   'Package',    account:  'User',    logistics: 'Truck',
+  };
 
-  if (error) throw new Error(`Trend alerts fetch failed: ${error.message}`);
-  return data ?? [];
+  const now = Date.now();
+  const since = {
+    '1h':  new Date(now - 1  * 60 * 60 * 1000).toISOString(),
+    '6h':  new Date(now - 6  * 60 * 60 * 1000).toISOString(),
+    '24h': new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+  };
+
+  // ── 1. Topics master list ────────────────────────────────────────────────
+  const { data: topicRows, error: topicErr } = await supabase
+    .from('topics')
+    .select('id, name, category, icon_name')
+    .limit(50);
+  if (topicErr) throw new Error(`Rising topics: ${topicErr.message}`);
+  if (!topicRows?.length) return [];
+
+  // ── 2. Fetch recent call_recordings (last 24 h, completed) ──────────────
+  const { data: callRows } = await supabase
+    .from('call_recordings')
+    .select('id, sentiment, sentiment_score, ai_summary, transcript_text, processed_at, created_at')
+    .eq('status', 'completed')
+    .gte('created_at', since['24h'])
+    .order('created_at', { ascending: false })
+    .limit(1000);
+
+  // ── 3. If no recent calls, fall back to all-time calls ──────────────────
+  const { data: allCallRows } = (!callRows?.length) ? await supabase
+    .from('call_recordings')
+    .select('id, sentiment, sentiment_score, ai_summary, transcript_text, processed_at, created_at')
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(500)
+    : { data: null };
+
+  const allCalls     = callRows?.length ? callRows : (allCallRows ?? []);
+  const usingAllTime = !callRows?.length;
+
+  if (!allCalls.length) return [];
+
+  // ── 4. Try call_topics junction first ───────────────────────────────────
+  const { data: junctionRows } = await supabase
+    .from('call_topics')
+    .select('topic_id, call_id')
+    .limit(5000);
+
+  // Build call_id → call map for quick lookup
+  const callMap = {};
+  for (const c of allCalls) callMap[c.id] = c;
+
+  // Group by topic via junction if data exists
+  const jGrouped = {};
+  for (const row of junctionRows ?? []) {
+    const call = callMap[row.call_id];
+    if (!call) continue;
+    if (!jGrouped[row.topic_id]) jGrouped[row.topic_id] = [];
+    jGrouped[row.topic_id].push(call);
+  }
+  const useJunction = Object.keys(jGrouped).length > 0;
+
+  // ── 5. Build stats per topic with time-window breakdown ─────────────────
+  const stats = topicRows.map(topic => {
+    let matchedCalls;
+
+    if (useJunction) {
+      matchedCalls = jGrouped[topic.id] ?? [];
+    } else {
+      // Keyword match against ai_summary + transcript_text
+      const kw = topic.name.toLowerCase();
+      matchedCalls = allCalls.filter(c => {
+        const hay = [c.ai_summary ?? '', c.transcript_text ?? ''].join(' ').toLowerCase();
+        return hay.includes(kw);
+      });
+    }
+
+    if (!matchedCalls.length) return null;
+
+    // Count per time window
+    const countIn = (windowKey) => {
+      if (usingAllTime) return matchedCalls.length; // no timestamp window
+      const cutoff = since[windowKey];
+      return matchedCalls.filter(c => (c.created_at ?? c.processed_at ?? '') >= cutoff).length;
+    };
+
+    const count1h  = countIn('1h');
+    const count6h  = countIn('6h');
+    const count24h = countIn('24h');
+
+    // Pick the tightest window that has data
+    let recentCount, timeframe;
+    if (count1h > 0)       { recentCount = count1h;  timeframe = 'last hour';    }
+    else if (count6h > 0)  { recentCount = count6h;  timeframe = 'last 6 hours'; }
+    else if (count24h > 0) { recentCount = count24h; timeframe = 'last 24 hours';}
+    else                   { recentCount = matchedCalls.length; timeframe = 'all time'; }
+
+    const urgency = matchedCalls.length > 0
+      ? matchedCalls.filter(c => NEGATIVE_SENTIMENTS.has((c.sentiment ?? '').toLowerCase())).length / matchedCalls.length
+      : 0;
+
+    return { topic, count: matchedCalls.length, recentCount, timeframe, urgency };
+  }).filter(Boolean).filter(s => s.recentCount > 0);
+
+  if (!stats.length) {
+    // Last resort: return all-matched even if count is 0 in recent window
+    return [];
+  }
+
+  // ── 6. Score & map severity ─────────────────────────────────────────────
+  const maxCount = Math.max(...stats.map(s => s.recentCount));
+
+  const scored = stats.map(s => {
+    const freqScore     = maxCount > 0 ? (s.recentCount / maxCount) * 100 : 0;
+    const urgScore      = s.urgency * 100;
+    const rawScore      = freqScore * 0.5 + urgScore * 0.5;
+    const severityScore = Math.min(100, Math.max(0, Math.round(rawScore)));
+
+    let severity, bgColor, borderColor, textColor, badgeBg;
+    if (severityScore >= 80) {
+      severity = 'CRITICAL'; bgColor = 'bg-rose-500/10';   borderColor = 'border-rose-500/30';
+      textColor = 'text-rose-400';  badgeBg = 'bg-rose-500/20';
+    } else if (severityScore >= 60) {
+      severity = 'HIGH';     bgColor = 'bg-orange-500/10'; borderColor = 'border-orange-500/30';
+      textColor = 'text-orange-400'; badgeBg = 'bg-orange-500/20';
+    } else if (severityScore >= 40) {
+      severity = 'MEDIUM';   bgColor = 'bg-amber-500/10';  borderColor = 'border-amber-500/30';
+      textColor = 'text-amber-400'; badgeBg = 'bg-amber-500/20';
+    } else {
+      severity = 'LOW';      bgColor = 'bg-blue-500/10';   borderColor = 'border-blue-500/30';
+      textColor = 'text-blue-400';  badgeBg = 'bg-blue-500/20';
+    }
+
+    const icon = s.topic.icon_name || CATEGORY_ICONS[s.topic.category] || 'Tag';
+
+    return {
+      id: s.topic.id, topic: s.topic.name, category: s.topic.category, icon,
+      severityScore, severity,
+      count: s.recentCount,     // mentions in the tightest recent window
+      timeframe: s.timeframe,   // e.g. "last hour", "last 6 hours"
+      urgencyPct: Math.round(s.urgency * 100),
+      bgColor, borderColor, textColor, badgeBg,
+    };
+  });
+
+  return scored
+    .sort((a, b) => b.severityScore - a.severityScore)
+    .slice(0, limit);
 }
+

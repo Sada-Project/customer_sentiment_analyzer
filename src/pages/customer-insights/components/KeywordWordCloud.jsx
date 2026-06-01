@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Wordcloud } from '@visx/wordcloud';
 import { scaleLog } from '@visx/scale';
 import { Text } from '@visx/text';
 import Icon from '../../../components/AppIcon';
+import { fetchKeywords } from '../../../services/customerInsightsService';
 
 // ── Sentiment bias → color category ──────────────────────────────────────────
 // DB column `sentiment_bias` holds Gemini values:
@@ -84,7 +85,17 @@ const FALLBACK_KEYWORDS = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-const KeywordWordCloud = ({ keywords: rawKeywords = [], loading = false, error = null }) => {
+const KeywordWordCloud = () => {
+  const [rawKeywords, setRawKeywords] = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
+
+  useEffect(() => {
+    fetchKeywords(50)
+      .then(data  => setRawKeywords(data))
+      .catch(err  => setError(err.message ?? 'Failed to load keywords'))
+      .finally(() => setLoading(false));
+  }, []);
 
   // Map backend rows → word cloud words; fall back to static data when empty
   const keywords = useMemo(() => {
@@ -116,7 +127,7 @@ const KeywordWordCloud = ({ keywords: rawKeywords = [], loading = false, error =
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-xl font-bold text-white mb-2">Keyword Frequency Analysis</h3>
-          <p className="text-slate-400 text-sm">Top 50 recurring words from customer conversations</p>
+          <p className="text-slate-400 text-sm">Top 50 recurring words from calls in the last 24 hours</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Loading spinner */}
