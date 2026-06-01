@@ -12,7 +12,7 @@ export async function fetchCustomers({ segment, interactionType, sentimentThresh
   }
   if (sentimentThreshold && sentimentThreshold !== 'all') {
     if (sentimentThreshold === 'positive') query = query.gte('sentiment', 70);
-    if (sentimentThreshold === 'neutral')  query = query.gte('sentiment', 40).lt('sentiment', 70);
+    if (sentimentThreshold === 'neutral') query = query.gte('sentiment', 40).lt('sentiment', 70);
     if (sentimentThreshold === 'negative') query = query.lt('sentiment', 40);
   }
   if (search) {
@@ -145,11 +145,11 @@ export async function fetchTopicFrequency() {
         ? Math.round(completedCalls.reduce((s, c) => s + Number(c.sentiment_score ?? 50), 0) / completedCalls.length)
         : 50;
       return {
-        topic_id:            topic.id,
-        call_count:          1, // show even if no explicit match
+        topic_id: topic.id,
+        call_count: 1, // show even if no explicit match
         avg_sentiment_score: globalAvg,
-        dominant_sentiment:  completedCalls[0]?.sentiment ?? 'neutral',
-        topics:              topic,
+        dominant_sentiment: completedCalls[0]?.sentiment ?? 'neutral',
+        topics: topic,
       };
     }
 
@@ -167,11 +167,11 @@ export async function fetchTopicFrequency() {
       .sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'neutral';
 
     return {
-      topic_id:            topic.id,
-      call_count:          count,
+      topic_id: topic.id,
+      call_count: count,
       avg_sentiment_score: avgScore,
-      dominant_sentiment:  dominant,
-      topics:              topic,
+      dominant_sentiment: dominant,
+      topics: topic,
     };
   }).sort((a, b) => b.call_count - a.call_count);
 }
@@ -189,9 +189,9 @@ export async function fetchKeywords(limit = 50) {
 
   // Return shape expected by KeywordWordCloud mapper: { word, frequency, weight, sentiment_bias }
   return (data ?? []).map(row => ({
-    word:           row.word,
-    frequency:      row.frequency ?? 1,
-    weight:         row.weight ?? 1,
+    word: row.word,
+    frequency: row.frequency ?? 1,
+    weight: row.weight ?? 1,
     sentiment_bias: row.sentiment_bias ?? 'neutral',
   }));
 }
