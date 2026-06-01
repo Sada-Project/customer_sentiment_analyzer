@@ -59,7 +59,18 @@ const AgentCard = ({ agent }) => {
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="relative flex-shrink-0">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md">
+            {agent?.avatarUrl ? (
+              <img
+                src={agent.avatarUrl}
+                alt={agent.name}
+                className="w-12 h-12 rounded-full object-cover shadow-md border-2 border-border"
+                onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+              />
+            ) : null}
+            <div
+              className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 items-center justify-center shadow-md"
+              style={{ display: agent?.avatarUrl ? 'none' : 'flex' }}
+            >
               <span className="text-base font-bold text-white">{initials}</span>
             </div>
             {/* Online indicator */}

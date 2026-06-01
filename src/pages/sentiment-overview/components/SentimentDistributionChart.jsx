@@ -47,9 +47,9 @@ const SentimentDistributionChart = ({ data, onDrillDown }) => {
           <h2 className="text-lg font-semibold text-foreground">Emotion Distribution</h2>
           <p className="text-sm text-muted-foreground mt-1">Customer emotion category breakdown</p>
         </div>
-        <Button 
-          variant="outline" 
-          iconName="Download" 
+        <Button
+          variant="outline"
+          iconName="Download"
           iconPosition="left"
           onClick={() => console.log('Export distribution data')}
         >
@@ -82,16 +82,16 @@ const SentimentDistributionChart = ({ data, onDrillDown }) => {
                   style={{ cursor: 'pointer' }}
                 >
                   {data?.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
+                    <Cell
+                      key={`cell-${index}`}
                       fill={COLORS?.[entry?.name]}
                       opacity={selectedSegment && selectedSegment !== entry?.name ? 0.3 : 1}
                     />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
-                <Legend 
-                  verticalAlign="bottom" 
+                <Legend
+                  verticalAlign="bottom"
                   height={36}
                   iconType="circle"
                   formatter={(value) => <span className="capitalize text-sm">{value}</span>}
@@ -103,38 +103,37 @@ const SentimentDistributionChart = ({ data, onDrillDown }) => {
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-foreground mb-3">Detailed Breakdown</h3>
             {data?.map((item) => (
-              <div 
+              <div
                 key={item?.name}
-                className={`p-4 rounded-lg border transition-all duration-150 cursor-pointer ${
-                  selectedSegment === item?.name 
+                className={`p-4 rounded-lg border transition-all duration-150 cursor-pointer ${selectedSegment === item?.name
                     ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/20'
-                }`}
+                  }`}
                 onClick={() => handleSegmentClick(item)}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full flex-shrink-0" 
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
                       style={{ backgroundColor: COLORS?.[item?.name] }}
                     />
                     <span className="text-sm font-medium text-foreground capitalize">{item?.name}</span>
                   </div>
                   <span className="text-sm font-bold text-foreground">{item?.percentage}%</span>
                 </div>
-                
+
                 <div className="w-full bg-muted rounded-full h-1.5 mb-2">
-                  <div 
+                  <div
                     className="h-1.5 rounded-full transition-all duration-500"
-                    style={{ 
+                    style={{
                       width: `${Math.min(Number(item?.percentage), 100)}%`,
                       backgroundColor: COLORS?.[item?.name]
                     }}
                   />
                 </div>
-                
+
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{Number(item?.value).toLocaleString()} calls</span>
-                  <span className="text-primary/70">Click to drill down →</span>
+
                 </div>
               </div>
             ))}

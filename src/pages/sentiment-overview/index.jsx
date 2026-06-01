@@ -6,7 +6,7 @@ import SentimentDistributionChart from './components/SentimentDistributionChart'
 import Icon from '../../components/AppIcon';
 import {
   fetchFilesProcessedToday,
-  fetchTranscriptionConfidence,
+  fetchOverallSentiment,
   fetchSentimentTimeline,
   fetchSentimentDistribution,
 } from '../../services/sentimentOverviewService';
@@ -21,19 +21,19 @@ const LOADING_KPI = {
     icon: 'FileCheck',
     sparklineData: [],
   },
-  transcription: {
-    title: 'Transcription Confidence',
+  sentiment: {
+    title: 'Overall Sentiment',
     value: '—',
     change: '—',
     changeType: 'neutral',
-    icon: 'AudioLines',
+    icon: 'SmilePlus',
     sparklineData: [],
   },
 };
 
 const SentimentOverview = () => {
   const [filesKPI,         setFilesKPI]         = useState(LOADING_KPI.files);
-  const [transcriptKPI,    setTranscriptKPI]    = useState(LOADING_KPI.transcription);
+  const [sentimentKPI,     setSentimentKPI]     = useState(LOADING_KPI.sentiment);
   const [timelineData,     setTimelineData]     = useState([]);
   const [distributionData, setDistribution]     = useState([]);
   const [loading,          setLoading]          = useState(true);
@@ -49,11 +49,11 @@ const SentimentOverview = () => {
     setErrors({});
 
     Promise.allSettled([
-      fetchFilesProcessedToday(),       // real count from call_recordings
-      fetchTranscriptionConfidence(),    // real avg from call_recordings
-      fetchSentimentTimeline(24),        // real buckets from call_recordings → fallback to timeline table
-      fetchSentimentDistribution(),      // real groups from call_recordings → fallback to distribution table
-    ]).then(([filesRes, transRes, timelineRes, distRes]) => {
+      fetchFilesProcessedToday(),
+      fetchOverallSentiment(),
+      fetchSentimentTimeline(24),
+      fetchSentimentDistribution(),
+    ]).then(([filesRes, sentimentRes, timelineRes, distRes]) => {
       if (cancelled) return;
       const errs = {};
 
@@ -73,20 +73,23 @@ const SentimentOverview = () => {
         console.warn('[Overview] files fetch failed:', filesRes.reason);
       }
 
-      // ── Transcription Confidence ──────────────────────────────────────
-      if (transRes.status === 'fulfilled') {
-        const conf = transRes.value;
-        setTranscriptKPI({
-          title:         'Transcription Confidence',
-          value:         conf != null ? `${conf}%` : 'N/A',
-          change:        conf != null ? (conf >= 90 ? 'Above target' : 'Below 90% target') : 'No data',
-          changeType:    conf != null ? (conf >= 90 ? 'positive' : 'negative') : 'neutral',
-          icon:          'AudioLines',
+      // ── Overall Sentiment ───────────────────────────────────────────────────
+      if (sentimentRes.status === 'fulfilled') {
+        const s = sentimentRes.value;
+        // Icon & color based on dominant sentiment
+        const iconMap = { Satisfied: 'Smile', Neutral: 'Meh', Frustrated: 'Frown', Angry: 'Angry' };
+        const typeMap = { Satisfied: 'positive', Neutral: 'neutral', Frustrated: 'negative', Angry: 'negative' };
+        setSentimentKPI({
+          title:         'Overall Sentiment',
+          value:         s ? s.label : 'N/A',
+          change:        s ? `${s.percentage}% of ${s.total} calls` : 'No data yet',
+          changeType:    s ? (typeMap[s.label] ?? 'neutral') : 'neutral',
+          icon:          s ? (iconMap[s.label] ?? 'SmilePlus') : 'SmilePlus',
           sparklineData: [],
         });
       } else {
-        errs.transcription = transRes.reason?.message;
-        console.warn('[Overview] transcription fetch failed:', transRes.reason);
+        errs.sentiment = sentimentRes.reason?.message;
+        console.warn('[Overview] overall sentiment fetch failed:', sentimentRes.reason);
       }
 
       // ── Emotion Timeline ──────────────────────────────────────────────
@@ -179,7 +182,7 @@ const SentimentOverview = () => {
           {/* ── KPI Cards ─────────────────────────────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
             <KPICard {...filesKPI} />
-            <KPICard {...transcriptKPI} />
+            <KPICard {...sentimentKPI} />
           </div>
 
           {/* ── Real-Time Emotion Timeline ────────────────────────────────── */}
