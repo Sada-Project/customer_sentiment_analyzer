@@ -1,20 +1,19 @@
 import { supabase } from '../lib/supabase';
 
 // ─── Fetch all agents with their performance data ─────────────────────────────
-// Maps vw_agent_performance (snake_case) → camelCase shape for AgentCard
 export async function fetchAgents({ department } = {}) {
   let query = supabase.from('vw_agent_performance').select('*');
-
   if (department && department !== 'all') {
     query = query.eq('department_code', department);
   }
 
   const { data, error } = await query.order('performance_score', { ascending: false });
+
   if (error) {
-    // Fallback: query agents table directly
+    // Fallback to agents table directly
     const fallback = await supabase
       .from('agents')
-      .select('id, name, role_title, email, is_online, performance_score, csat_score, tickets_solved_total, tickets_solved_trend, fcr_rate, fcr_trend, avg_handle_time, open_tickets, last_seen')
+      .select('id, name, role_title, email, is_online, last_seen, performance_score, csat_score, tickets_solved_total, tickets_solved_trend, fcr_rate, fcr_trend, avg_handle_time, open_tickets')
       .order('performance_score', { ascending: false });
     if (fallback.error) throw new Error(fallback.error.message);
     return (fallback.data ?? []).map(mapAgent);
@@ -23,7 +22,7 @@ export async function fetchAgents({ department } = {}) {
   return (data ?? []).map(mapAgent);
 }
 
-// ─── Map DB row → AgentCard prop shape ───────────────────────────────────────
+// ─── Map DB row → AgentCard props ─────────────────────────────────────────────
 function mapAgent(a) {
   return {
     id:               a.id,
@@ -45,7 +44,7 @@ function mapAgent(a) {
   };
 }
 
-// ─── Departments for FilterBar ────────────────────────────────────────────────
+// ─── Departments list ─────────────────────────────────────────────────────────
 export async function fetchDepartments() {
   const { data, error } = await supabase
     .from('departments')
@@ -55,25 +54,56 @@ export async function fetchDepartments() {
   return data ?? [];
 }
 
-// ─── Overall summary stats ────────────────────────────────────────────────────
+// ─── Summary stats — computed live from call_recordings ───────────────────────
 export async function fetchAgentStats() {
-  const { data, error } = await supabase
+  // Get agent summary from agents table
+  const { data: agentRows, error: agentErr } = await supabase
     .from('agents')
-    .select('id, is_online, performance_score, tickets_solved_total, csat_score');
+    .select('id, is_online, performance_score, csat_score, tickets_solved_total');
 
-  if (error) throw new Error(error.message);
+  if (agentErr) throw new Error(agentErr.message);
 
-  const agents = data ?? [];
+  const agents = agentRows ?? [];
   const total  = agents.length;
+
+  // Also get real-time call count from call_recordings (most accurate)
+  const { count: liveCallCount } = await supabase
+    .from('call_recordings')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'completed')
+    .not('agent_id', 'is', null);
+
   return {
-    totalAgents:    total,
-    onlineAgents:   agents.filter(a => a.is_online).length,
-    avgPerformance: total
+    totalAgents:       total,
+    onlineAgents:      agents.filter(a => a.is_online).length,
+    avgPerformance:    total
       ? Math.round(agents.reduce((s, a) => s + (Number(a.performance_score) || 0), 0) / total)
       : 0,
     avgCsat: total
       ? Math.round(agents.reduce((s, a) => s + (Number(a.csat_score) || 0), 0) / total)
       : 0,
-    totalCallsHandled: agents.reduce((s, a) => s + (a.tickets_solved_total ?? 0), 0),
+    // Use live count from call_recordings if available, else sum from agents table
+    totalCallsHandled: liveCallCount ??
+      agents.reduce((s, a) => s + (a.tickets_solved_total ?? 0), 0),
   };
+}
+
+// ─── Manually trigger a stat refresh for the current user's agent ─────────────
+// Call this after a call completes as a safety net (trigger handles it automatically)
+export async function refreshMyAgentStats(userProfileId) {
+  if (!userProfileId) return;
+
+  const { data: agentRow } = await supabase
+    .from('agents')
+    .select('id')
+    .eq('user_profile_id', userProfileId)
+    .maybeSingle();
+
+  if (!agentRow?.id) return;
+
+  // Call the DB function we created in the trigger migration
+  await supabase.rpc('refresh_agent_stats', { p_agent_id: agentRow.id }).catch(() => {
+    // Fallback: manual update if RPC not available yet
+    console.warn('[agentPerf] refresh_agent_stats RPC not available — trigger will handle it');
+  });
 }

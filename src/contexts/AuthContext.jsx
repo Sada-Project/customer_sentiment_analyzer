@@ -19,6 +19,18 @@ function toArabicError(msg = '') {
   return msg;
 }
 
+// ── Update last_login to mark user as online ────────────────────────────────
+async function touchLastLogin(userId) {
+  if (!userId) return;
+  await supabase
+    .from('user_profiles')
+    .update({ last_login: new Date().toISOString() })
+    .eq('id', userId)
+    .then(({ error }) => {
+      if (error) console.warn('heartbeat update failed:', error.message);
+    });
+}
+
 // ── Fetch user profile — always resolves, never rejects ──────────────────────
 async function fetchProfile(userId) {
   if (!userId) return null;
@@ -59,6 +71,8 @@ export const AuthProvider = ({ children }) => {
       if (!mounted) return;
       if (session?.user) {
         setUser(session.user);
+        // Update last_login immediately so is_online = true right away
+        touchLastLogin(session.user.id);
         fetchProfile(session.user.id).then(prof => {
           if (mounted) {
             setProfile(prof);
@@ -76,6 +90,17 @@ export const AuthProvider = ({ children }) => {
       }
     });
 
+    // ── Heartbeat: keep last_login fresh every 5 minutes ──────────────────────
+    // The view checks last_login > NOW() - 30min, so updating every 5min
+    // means the user stays "online" as long as the app is open.
+    let heartbeatUserId = null;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      heartbeatUserId = session?.user?.id ?? null;
+    });
+    const heartbeat = setInterval(() => {
+      if (heartbeatUserId) touchLastLogin(heartbeatUserId);
+    }, 5 * 60 * 1000); // every 5 minutes
+
     // Only handle SIGNED_OUT and TOKEN_REFRESHED here.
     // SIGNED_IN after signInWithPassword is handled by the navigate() in login page.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -87,8 +112,9 @@ export const AuthProvider = ({ children }) => {
           setProfile(null);
           setLoading(false);
         } else if (event === 'SIGNED_IN' && session?.user) {
-          // Update user state; profile already set by getSession or will load momentarily
           setUser(session.user);
+          heartbeatUserId = session.user.id;
+          touchLastLogin(session.user.id);
           fetchProfile(session.user.id).then(prof => {
             if (mounted) {
               setProfile(prof);
@@ -97,13 +123,14 @@ export const AuthProvider = ({ children }) => {
           });
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
           setUser(session.user);
-          // Don't touch loading or profile — just keep existing state
+          heartbeatUserId = session.user.id;
         }
       }
     );
 
     return () => {
       mounted = false;
+      clearInterval(heartbeat);
       subscription.unsubscribe();
     };
   }, []);

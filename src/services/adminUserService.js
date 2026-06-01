@@ -4,18 +4,30 @@ import { supabase } from '../lib/supabase';
 export async function fetchUsers({ search, role } = {}) {
   let query = supabase
     .from('user_profiles')
-    .select('id, email, username, full_name, role, is_active, created_at, last_login, avatar_url');
+    .select(`
+      id, email, username, full_name, role, is_active, created_at, last_login, avatar_url,
+      agents ( id, role_title, department_id, departments ( code, name ) )
+    `);
 
-  if (role && role !== 'all') {
-    query = query.eq('role', role);
-  }
+  if (role && role !== 'all') query = query.eq('role', role);
   if (search) {
     query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,username.ilike.%${search}%`);
   }
 
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;
-  return data ?? [];
+
+  // Flatten agent fields onto user object
+  return (data ?? []).map(u => {
+    const ag = Array.isArray(u.agents) ? u.agents[0] : u.agents;
+    return {
+      ...u,
+      agent_id:        ag?.id ?? null,
+      role_title:      ag?.role_title ?? null,
+      department_code: ag?.departments?.code ?? null,
+      department_name: ag?.departments?.name ?? null,
+    };
+  });
 }
 
 // ─── Toggle user active status ────────────────────────────────────────────────
@@ -30,17 +42,56 @@ export async function toggleUserStatus(userId, isActive) {
 
 // ─── Update user ──────────────────────────────────────────────────────────────
 export async function updateUser(userId, updates) {
-  const allowed = ['full_name', 'role', 'is_active', 'avatar_url'];
-  const payload = Object.fromEntries(
-    Object.entries(updates).filter(([k]) => allowed.includes(k))
+  // 1. Update user_profiles (name + system role)
+  const profileFields = ['full_name', 'role', 'is_active', 'avatar_url'];
+  const profilePayload = Object.fromEntries(
+    Object.entries(updates).filter(([k]) => profileFields.includes(k))
   );
+  if (Object.keys(profilePayload).length > 0) {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update(profilePayload)
+      .eq('id', userId);
+    if (error) throw error;
+  }
 
-  const { error } = await supabase
-    .from('user_profiles')
-    .update(payload)
-    .eq('id', userId);
+  // 2. Update agents table (role_title and/or department)
+  const { role_title, department_code } = updates;
+  const hasAgentUpdate = role_title !== undefined || department_code !== undefined;
 
-  if (error) throw error;
+  if (hasAgentUpdate) {
+    // Find this user's agent row
+    const { data: agentRow } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('user_profile_id', userId)
+      .maybeSingle();
+
+    if (agentRow?.id) {
+      const agentPayload = {};
+      if (role_title      !== undefined) agentPayload.role_title    = role_title;
+      if (department_code !== undefined && department_code) {
+        // Resolve department_code → department_id
+        const { data: dept } = await supabase
+          .from('departments')
+          .select('id')
+          .eq('code', department_code)
+          .maybeSingle();
+        if (dept?.id) agentPayload.department_id = dept.id;
+      } else if (department_code === '' || department_code === null) {
+        agentPayload.department_id = null;
+      }
+
+      if (Object.keys(agentPayload).length > 0) {
+        agentPayload.updated_at = new Date().toISOString();
+        const { error: agentError } = await supabase
+          .from('agents')
+          .update(agentPayload)
+          .eq('id', agentRow.id);
+        if (agentError) throw agentError;
+      }
+    }
+  }
 }
 
 // ─── Delete user permanently ──────────────────────────────────────────────────

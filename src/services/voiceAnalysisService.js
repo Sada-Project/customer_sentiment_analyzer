@@ -28,20 +28,33 @@ export async function fetchRecentAnalyses(limit = 10) {
 
 // ─── Create a new call_recordings row before processing ──────────────────────
 export async function createCallRecord({ fileName, fileFormat, fileSizeBytes, submittedBy }) {
+  // Look up this user's agent record so calls are linked for stats counting
+  let agentId = null;
+  if (submittedBy) {
+    const { data: agentRow } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('user_profile_id', submittedBy)
+      .maybeSingle();
+    agentId = agentRow?.id ?? null;
+  }
+
   const { data, error } = await supabase
     .from('call_recordings')
     .insert({
-      file_name:       fileName,
-      file_format:     fileFormat?.toLowerCase().replace('.', ''),
-      file_size_bytes: fileSizeBytes,
-      status:          'processing',
-      processing_started_at: new Date().toISOString(),
+      file_name:              fileName,
+      file_format:            fileFormat?.toLowerCase().replace('.', ''),
+      file_size_bytes:        fileSizeBytes,
+      agent_id:               agentId,            // ← linked to real agent
+      submitted_by:           submittedBy ?? null, // ← track who uploaded
+      status:                 'processing',
+      processing_started_at:  new Date().toISOString(),
     })
     .select('id')
     .single();
 
   if (error) throw error;
-  return data.id; // return the UUID to use for updates
+  return data.id;
 }
 
 // ─── Processing Queue ─────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import {
   saveAudioUrl,
   updateQueueProgress,
 } from '../../services/voiceAnalysisService';
+import { refreshMyAgentStats } from '../../services/agentPerformanceService';
 
 // ─── Sentiment colour helpers ─────────────────────────────────────────────────
 const SENTIMENT_STYLES = {
@@ -130,11 +131,13 @@ const VoiceAnalysisHub = () => {
         sb.from('call_recordings').update({ duration_seconds: Math.round(finalDurSecs) }).eq('id', dbId).then(() => {});
       }
 
-      // ── Step 4: Remove from queue instantly (no page refresh needed) ─────────
+      // ── Step 4: Remove from queue + refresh agent stats ─────────────────────
       if (dbId) {
         setQueueItems(prev => prev.filter(item => item.id !== dbId));
         await updateQueueProgress(dbId, 100, 'completed').catch(() => { });
       }
+      // Refresh this user's agent stats so the Agent Performance page updates
+      refreshMyAgentStats(user?.id).catch(() => {});
 
     } catch (err) {
       console.error('[Voice Pipeline]', err);

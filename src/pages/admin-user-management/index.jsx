@@ -230,13 +230,16 @@ const AdminUserManagement = () => {
         const isTempUser = String(selectedUser.id).startsWith('temp-');
         if (!isTempUser) {
           await updateUser(selectedUser.id, {
-            full_name: userData.full_name,
-            role:      userData.role,
+            full_name:       userData.full_name,
+            role:            userData.role,
+            role_title:      userData.role_title,
+            department_code: userData.department_code,
           });
         }
         setUsers(prev => prev.map(u =>
           u.id === selectedUser.id
-            ? { ...u, full_name: userData.full_name, role: userData.role }
+            ? { ...u, full_name: userData.full_name, role: userData.role,
+                role_title: userData.role_title, department_code: userData.department_code }
             : u
         ));
         showToast('تم تحديث بيانات المستخدم.', 'success');

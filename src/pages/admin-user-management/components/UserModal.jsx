@@ -4,40 +4,64 @@ import Input from '../../../components/ui/Input';
 import Select from '../../../components/ui/Select';
 import Button from '../../../components/ui/Button';
 
-// Role options formatted for the custom Select component
+// Role options
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin — مدير النظام' },
   { value: 'agent', label: 'Agent — وكيل' },
 ];
 
+// Department options (matches departments.code in DB)
+const DEPT_OPTIONS = [
+  { value: '',          label: 'بدون قسم' },
+  { value: 'support',   label: 'Customer Support — دعم العملاء' },
+  { value: 'technical', label: 'Technical Support — الدعم التقني' },
+  { value: 'sales',     label: 'Sales — المبيعات' },
+  { value: 'billing',   label: 'Billing — الفوترة' },
+];
+
+// Common job titles
+const ROLE_TITLE_OPTIONS = [
+  { value: 'Support Agent',           label: 'Support Agent' },
+  { value: 'Senior Support Agent',    label: 'Senior Support Agent' },
+  { value: 'Technical Specialist',    label: 'Technical Specialist' },
+  { value: 'Senior Technical Lead',   label: 'Senior Technical Lead' },
+  { value: 'Billing Specialist',      label: 'Billing Specialist' },
+  { value: 'Sales Representative',    label: 'Sales Representative' },
+  { value: 'Sales Specialist',        label: 'Sales Specialist' },
+  { value: 'Team Lead',               label: 'Team Lead' },
+  { value: 'Quality Analyst',         label: 'Quality Analyst' },
+];
+
 const UserModal = ({ user, onSave, onClose }) => {
   const [formData, setFormData] = useState({
-    full_name: '',
-    email: '',
-    role: 'agent',
-    password: '',
+    full_name:       '',
+    email:           '',
+    role:            'agent',
+    role_title:      '',
+    department_code: '',
+    password:        '',
     confirmPassword: '',
   });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // Populate form when editing an existing user
   useEffect(() => {
     if (user) {
       setFormData({
         full_name:       user?.full_name || user?.name || '',
         email:           user?.email || '',
         role:            user?.role?.toLowerCase() || 'agent',
+        role_title:      user?.role_title || '',
+        department_code: user?.department_code || '',
         password:        '',
         confirmPassword: '',
       });
     } else {
-      setFormData({ full_name: '', email: '', role: 'agent', password: '', confirmPassword: '' });
+      setFormData({ full_name: '', email: '', role: 'agent', role_title: '', department_code: '', password: '', confirmPassword: '' });
     }
     setErrors({});
   }, [user]);
 
-  // Handle regular text inputs
   const handleChange = (e) => {
     const { name, value } = e?.target ?? {};
     if (!name) return;
@@ -45,10 +69,17 @@ const UserModal = ({ user, onSave, onClose }) => {
     if (errors?.[name]) setErrors(prev => ({ ...prev, [name]: '' }));
   };
 
-  // Handle custom Select component (calls onChange(value) directly — not e.target)
   const handleRoleChange = (value) => {
     setFormData(prev => ({ ...prev, role: value }));
     if (errors?.role) setErrors(prev => ({ ...prev, role: '' }));
+  };
+
+  const handleRoleTitleChange = (value) => {
+    setFormData(prev => ({ ...prev, role_title: value }));
+  };
+
+  const handleDeptChange = (value) => {
+    setFormData(prev => ({ ...prev, department_code: value }));
   };
 
   const validateForm = () => {
@@ -86,9 +117,11 @@ const UserModal = ({ user, onSave, onClose }) => {
     setSaving(true);
     try {
       await onSave?.({
-        full_name: formData.full_name.trim(),
-        email:     formData.email.trim().toLowerCase(),
-        role:      formData.role,
+        full_name:       formData.full_name.trim(),
+        email:           formData.email.trim().toLowerCase(),
+        role:            formData.role,
+        role_title:      formData.role_title || null,
+        department_code: formData.department_code || null,
         ...(formData.password ? { password: formData.password } : {}),
       });
     } finally {
@@ -161,7 +194,7 @@ const UserModal = ({ user, onSave, onClose }) => {
             )}
           </div>
 
-          {/* Role — uses custom Select with options prop */}
+          {/* Role — uses custom Select */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
               الدور <span className="text-destructive">*</span>
@@ -177,6 +210,39 @@ const UserModal = ({ user, onSave, onClose }) => {
               <p className="mt-1 text-xs text-destructive">{errors?.role}</p>
             )}
           </div>
+
+          {/* Job Title — only shown when editing (not creating) */}
+          {user && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">
+                المسمى الوظيفي
+              </label>
+              <Select
+                options={ROLE_TITLE_OPTIONS}
+                value={formData?.role_title}
+                onChange={handleRoleTitleChange}
+                placeholder="اختر المسمى الوظيفي..."
+                className="w-full"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">يظهر في صفحة Agent Performance</p>
+            </div>
+          )}
+
+          {/* Department — only shown when editing */}
+          {user && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">
+                القسم
+              </label>
+              <Select
+                options={DEPT_OPTIONS}
+                value={formData?.department_code}
+                onChange={handleDeptChange}
+                placeholder="اختر القسم..."
+                className="w-full"
+              />
+            </div>
+          )}
 
           {/* Password */}
           <div>

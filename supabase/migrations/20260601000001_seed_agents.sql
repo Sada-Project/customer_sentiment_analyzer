@@ -1,9 +1,12 @@
 -- ============================================================
--- SEED: Departments + Agents
--- Run this in Supabase SQL Editor → it is safe to run multiple times
+-- SEED AGENTS FROM REAL USERS
+-- Reads actual user_profiles from your Supabase Auth and
+-- creates an agent record for each one.
+-- Safe to run multiple times (ON CONFLICT DO UPDATE).
+-- Run in: Supabase Dashboard → SQL Editor
 -- ============================================================
 
--- ── 1. Departments (safe upsert) ────────────────────────────
+-- ── 1. Ensure departments exist ──────────────────────────────
 INSERT INTO departments (name, code, description)
 VALUES
     ('Customer Support', 'support',   'Handles general customer inquiries'),
@@ -12,9 +15,27 @@ VALUES
     ('Billing',          'billing',   'Handles billing and payment issues')
 ON CONFLICT (code) DO NOTHING;
 
--- ── 2. Agents (safe upsert by email) ────────────────────────
+-- ── 2. Create one agent per user_profile ────────────────────
+-- Uses CTEs to pre-compute row numbers (window functions not allowed in OFFSET).
+WITH ranked_users AS (
+    SELECT
+        id,
+        full_name,
+        email,
+        role,
+        last_login,
+        (ROW_NUMBER() OVER (ORDER BY created_at) - 1) AS rn
+    FROM user_profiles
+),
+ranked_depts AS (
+    SELECT
+        id,
+        (ROW_NUMBER() OVER (ORDER BY name) - 1) AS dn,
+        COUNT(*) OVER ()                          AS total
+    FROM departments
+)
 INSERT INTO agents (
-    name, email, role_title, department_id,
+    user_profile_id, name, email, role_title, department_id,
     is_online,
     performance_score, csat_score,
     tickets_solved_total, tickets_solved_trend,
@@ -22,55 +43,99 @@ INSERT INTO agents (
     avg_handle_time, open_tickets
 )
 SELECT
-    a.name, a.email, a.role_title,
+    u.id,
+    u.full_name,
+    u.email,
+    CASE u.role WHEN 'admin' THEN 'Team Lead' ELSE 'Support Agent' END,
     d.id,
-    a.is_online,
-    a.perf, a.csat,
-    a.solved, a.solved_trend,
-    a.fcr, a.fcr_trend,
-    a.handle_time, a.open_tickets
-FROM (VALUES
-    ('Alex Johnson',    'alex.johnson@callcenter.ai',    'Senior Support Agent',   'support',   true,  88.5, 91.2, 342, 12,  78.4, 5,  8.2,  3),
-    ('Maria Santos',    'maria.santos@callcenter.ai',    'Technical Specialist',   'technical', true,  92.3, 94.1, 289, 8,   82.1, 3,  7.5,  1),
-    ('David Kim',       'david.kim@callcenter.ai',       'Billing Specialist',     'billing',   false, 85.1, 88.7, 421, -3,  75.3, -2, 9.1,  5),
-    ('Sarah Williams',  'sarah.williams@callcenter.ai',  'Sales Representative',   'sales',     true,  79.8, 83.5, 198, 6,   71.2, 4,  11.3, 8),
-    ('James Cooper',    'james.cooper@callcenter.ai',    'Support Agent',          'support',   false, 76.4, 80.1, 156, -1,  68.9, 0,  10.8, 2),
-    ('Priya Patel',     'priya.patel@callcenter.ai',     'Senior Technical Lead',  'technical', true,  95.1, 96.3, 512, 15,  88.2, 7,  6.8,  0),
-    ('Marcus Lee',      'marcus.lee@callcenter.ai',      'Sales Specialist',       'sales',     true,  83.7, 86.4, 274, 4,   74.6, 2,  9.7,  4),
-    ('Emily Chen',      'emily.chen@callcenter.ai',      'Billing & Accounts',     'billing',   false, 90.2, 92.0, 388, 9,   80.5, 6,  7.9,  2)
-) AS a(name, email, role_title, dept_code, is_online, perf, csat, solved, solved_trend, fcr, fcr_trend, handle_time, open_tickets)
-JOIN departments d ON d.code = a.dept_code
+    (u.last_login > NOW() - INTERVAL '30 minutes'),
+    ROUND((70 + RANDOM() * 25)::numeric, 2),
+    ROUND((72 + RANDOM() * 23)::numeric, 2),
+    0, 0,
+    ROUND((65 + RANDOM() * 25)::numeric, 2), 0,
+    ROUND((7  + RANDOM() * 5 )::numeric, 2),
+    0
+FROM ranked_users u
+JOIN ranked_depts d ON d.dn = u.rn % d.total
 ON CONFLICT (email) DO UPDATE SET
-    performance_score     = EXCLUDED.performance_score,
-    csat_score            = EXCLUDED.csat_score,
-    tickets_solved_total  = EXCLUDED.tickets_solved_total,
-    tickets_solved_trend  = EXCLUDED.tickets_solved_trend,
-    fcr_rate              = EXCLUDED.fcr_rate,
-    fcr_trend             = EXCLUDED.fcr_trend,
-    avg_handle_time       = EXCLUDED.avg_handle_time,
-    open_tickets          = EXCLUDED.open_tickets,
-    is_online             = EXCLUDED.is_online,
-    updated_at            = NOW();
+    user_profile_id = EXCLUDED.user_profile_id,
+    name            = EXCLUDED.name,
+    role_title      = EXCLUDED.role_title,
+    is_online       = EXCLUDED.is_online,
+    updated_at      = NOW();
 
--- ── 3. Badges (optional — adds flair to top agents) ─────────
-INSERT INTO agent_badges (agent_id, badge, label)
-SELECT a.id, 'top_performer', '🏆 Top Performer'
-FROM agents a WHERE a.email = 'priya.patel@callcenter.ai'
-ON CONFLICT DO NOTHING;
+-- ── 3. Update tickets_solved_total from real call_recordings ─
+UPDATE agents a
+SET
+    tickets_solved_total = sub.call_count,
+    updated_at           = NOW()
+FROM (
+    SELECT agent_id, COUNT(*) AS call_count
+    FROM   call_recordings
+    WHERE  status    = 'completed'
+      AND  agent_id IS NOT NULL
+    GROUP BY agent_id
+) sub
+WHERE a.id = sub.agent_id;
 
-INSERT INTO agent_badges (agent_id, badge, label)
-SELECT a.id, 'high_csat', '⭐ High CSAT'
-FROM agents a WHERE a.email IN ('priya.patel@callcenter.ai','maria.santos@callcenter.ai')
-ON CONFLICT DO NOTHING;
+-- ── 4. Update performance_score from avg sentiment_confidence ─
+UPDATE agents a
+SET
+    performance_score = ROUND(sub.avg_confidence::numeric, 2),
+    updated_at        = NOW()
+FROM (
+    SELECT agent_id, AVG(sentiment_confidence) AS avg_confidence
+    FROM   call_recordings
+    WHERE  status                = 'completed'
+      AND  agent_id             IS NOT NULL
+      AND  sentiment_confidence IS NOT NULL
+    GROUP BY agent_id
+    HAVING COUNT(*) > 0
+) sub
+WHERE a.id = sub.agent_id;
 
-INSERT INTO agent_badges (agent_id, badge, label)
-SELECT a.id, 'fast_responder', '⚡ Fast Responder'
-FROM agents a WHERE a.email IN ('maria.santos@callcenter.ai','alex.johnson@callcenter.ai')
-ON CONFLICT DO NOTHING;
+-- ── 5. Update csat_score from avg sentiment_score ────────────
+UPDATE agents a
+SET
+    csat_score = ROUND(sub.avg_sentiment::numeric, 2),
+    updated_at = NOW()
+FROM (
+    SELECT agent_id, AVG(sentiment_score) AS avg_sentiment
+    FROM   call_recordings
+    WHERE  status         = 'completed'
+      AND  agent_id      IS NOT NULL
+      AND  sentiment_score IS NOT NULL
+    GROUP BY agent_id
+    HAVING COUNT(*) > 0
+) sub
+WHERE a.id = sub.agent_id;
 
--- ── 4. Verify ────────────────────────────────────────────────
-SELECT 'Departments' AS table_name, COUNT(*) AS rows FROM departments
-UNION ALL
-SELECT 'Agents',  COUNT(*) FROM agents
-UNION ALL
-SELECT 'Badges',  COUNT(*) FROM agent_badges;
+-- ── 6. Update avg_handle_time from real call durations ───────
+UPDATE agents a
+SET
+    avg_handle_time = ROUND((sub.avg_seconds / 60.0)::numeric, 2),
+    updated_at      = NOW()
+FROM (
+    SELECT agent_id, AVG(duration_seconds) AS avg_seconds
+    FROM   call_recordings
+    WHERE  status           = 'completed'
+      AND  agent_id        IS NOT NULL
+      AND  duration_seconds > 0
+    GROUP BY agent_id
+) sub
+WHERE a.id = sub.agent_id;
+
+-- ── 7. Verify results ────────────────────────────────────────
+SELECT
+    a.name,
+    a.email,
+    a.role_title,
+    d.name                     AS department,
+    a.is_online,
+    a.performance_score,
+    a.csat_score,
+    a.tickets_solved_total     AS calls_handled,
+    a.avg_handle_time
+FROM agents a
+LEFT JOIN departments d ON d.id = a.department_id
+ORDER BY a.performance_score DESC;
