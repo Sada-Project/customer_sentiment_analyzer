@@ -107,30 +107,6 @@ export async function fetchTopicFrequency() {
     .order('processed_at', { ascending: false })
     .limit(200);
 
-<<<<<<< Updated upstream
-  let { data, error } = await supabase
-    .from('topic_frequency')
-    .select('*, topics(name, color, icon_name, category)')
-    .eq('period_date', targetDate)
-    .order('call_count', { ascending: false });
-
-  if (error) throw new Error(`Topic frequency fetch failed: ${error.message}`);
-
-  // Fallback: if today has no data, get most recent
-  if (!data || data.length === 0) {
-    const fallback = await supabase
-      .from('topic_frequency')
-      .select('*, topics(name, color, icon_name, category)')
-      .order('period_date', { ascending: false })
-      .order('call_count',  { ascending: false })
-      .limit(12);
-
-    if (fallback.error) throw new Error(`Topic fallback failed: ${fallback.error.message}`);
-    return fallback.data ?? [];
-  }
-
-  return data;
-=======
   if (callErr) throw callErr;
 
   // Step 2: Get all topics (the master table, not junction)
@@ -198,7 +174,6 @@ export async function fetchTopicFrequency() {
       topics:              topic,
     };
   }).sort((a, b) => b.call_count - a.call_count);
->>>>>>> Stashed changes
 }
 
 // ─── Keyword Word Cloud ───────────────────────────────────────────────────────
@@ -210,10 +185,6 @@ export async function fetchKeywords(limit = 50) {
     .order('frequency', { ascending: false })
     .limit(limit);
 
-<<<<<<< Updated upstream
-  if (error) throw new Error(`Keywords fetch failed: ${error.message}`);
-  return data ?? [];
-=======
   if (error) throw error;
 
   // Return shape expected by KeywordWordCloud mapper: { word, frequency, weight, sentiment_bias }
@@ -223,7 +194,6 @@ export async function fetchKeywords(limit = 50) {
     weight:         row.weight ?? 1,
     sentiment_bias: row.sentiment_bias ?? 'neutral',
   }));
->>>>>>> Stashed changes
 }
 
 // ─── Trend Alert Widget ───────────────────────────────────────────────────────

@@ -70,14 +70,19 @@ const PerformanceAnalytics = () => {
         }
 
         if (chart.length > 0) setChartData(chart);
-        if (health.length > 0) setSystemHealth(health.map(row => ({
-          title:      row.metric_label,
-          value:      Number(row.current_value),
-          max:        Number(row.max_value),
-          unit:       row.unit,
-          icon:       row.icon_name ?? 'Activity',
-          thresholds: { warning: row.warning_threshold, critical: row.critical_threshold },
-        })));
+        if (health.length > 0) setSystemHealth(
+          health
+            .filter(row => row.metric_label?.toLowerCase().includes('api response') ||
+                           row.metric_key?.toLowerCase().includes('api_response'))
+            .map(row => ({
+              title:      row.metric_label,
+              value:      Number(row.current_value),
+              max:        Number(row.max_value),
+              unit:       row.unit,
+              icon:       row.icon_name ?? 'Activity',
+              thresholds: { warning: row.warning_threshold, critical: row.critical_threshold },
+            }))
+        );
         if (alts.length > 0) setAlerts(alts);
         setLastUpdate('just now');
       })
@@ -116,8 +121,7 @@ const PerformanceAnalytics = () => {
   ];
 
   const displayHealth = systemHealth.length > 0 ? systemHealth : [
-    { title: 'Memory',       value: 12.4, max: 16,  unit: 'GB', icon: 'HardDrive', thresholds: { warning: 75, critical: 90 } },
-    { title: 'API Response', value: 142,  max: 500, unit: 'ms', icon: 'Gauge',     thresholds: { warning: 60, critical: 80 } },
+    { title: 'API Response', value: 142, max: 500, unit: 'ms', icon: 'Gauge', thresholds: { warning: 60, critical: 80 } },
   ];
 
   return (
@@ -142,20 +146,18 @@ const PerformanceAnalytics = () => {
             {displayKPIs.map((metric) => <MetricCard key={metric.title} {...metric} />)}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6 items-stretch">
             <div className="lg:col-span-9">
               <PerformanceChart data={displayChart} metrics={CHART_METRICS} />
             </div>
-            <div className="lg:col-span-3 space-y-4">
-              {displayHealth.map((h, i) => <SystemHealthGauge key={i} {...h} />)}
+            <div className="lg:col-span-3 flex flex-col">
+              {displayHealth.map((h, i) => (
+                <div key={i} className="flex-1">
+                  <SystemHealthGauge {...h} />
+                </div>
+              ))}
             </div>
           </div>
-
-          {alerts.length > 0 && (
-            <div className="mb-6">
-              <AlertPanel alerts={alerts} />
-            </div>
-          )}
 
         </div>
       </main>
