@@ -21,8 +21,8 @@ const LoginScreen = () => {
 
     try {
       await signIn(email, password);
-      // Navigate to root — RoleBasedRedirect will send user to correct page
-      navigate('/');
+      // Navigate to /dashboard — RoleBasedRedirect will send user to correct page
+      navigate('/dashboard');
     } catch (err) {
       setError(err?.message || 'Login failed. Please check your credentials.');
     } finally {

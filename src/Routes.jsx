@@ -35,6 +35,16 @@ const Routes = () => {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login-screen" element={<LoginScreen />} />
 
+            {/* Dashboard redirect — goes to correct page based on role */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <RoleBasedRedirect />
+                </ProtectedRoute>
+              }
+            />
+
             <Route
               path="/sentiment-overview"
               element={
