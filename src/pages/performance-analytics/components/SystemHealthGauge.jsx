@@ -22,34 +22,34 @@ const SystemHealthGauge = ({ title, value, max, unit, icon, thresholds }) => {
     return 'Healthy';
   };
 
-  const circumference = 2 * Math.PI * 45;
+  const circumference = 2 * Math.PI * 88;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4">
+    <div className="bg-card border border-border rounded-lg p-4 h-full flex flex-col">
       <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted">
           <Icon name={icon} size={16} color="var(--color-muted-foreground)" />
         </div>
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
       </div>
-      <div className="flex flex-col items-center">
-        <div className="relative w-32 h-32">
-          <svg className="transform -rotate-90 w-32 h-32">
+      <div className="flex-1 flex flex-col items-center justify-center">
+        <div className="relative w-52 h-52">
+          <svg className="transform -rotate-90 w-52 h-52" viewBox="0 0 208 208">
             <circle
-              cx="64"
-              cy="64"
-              r="45"
+              cx="104"
+              cy="104"
+              r="88"
               stroke="var(--color-muted)"
-              strokeWidth="8"
+              strokeWidth="10"
               fill="none"
             />
             <circle
-              cx="64"
-              cy="64"
-              r="45"
+              cx="104"
+              cy="104"
+              r="88"
               stroke={getGaugeColor()}
-              strokeWidth="8"
+              strokeWidth="10"
               fill="none"
               strokeDasharray={circumference}
               strokeDashoffset={strokeDashoffset}
@@ -58,10 +58,10 @@ const SystemHealthGauge = ({ title, value, max, unit, icon, thresholds }) => {
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className={`text-2xl font-bold ${getStatusColor()}`}>
+            <span className={`text-4xl font-bold ${getStatusColor()}`}>
               {value}{unit}
             </span>
-            <span className="text-xs text-muted-foreground mt-1">of {max}{unit}</span>
+            <span className="text-sm text-muted-foreground mt-1">of {max}{unit}</span>
           </div>
         </div>
         
