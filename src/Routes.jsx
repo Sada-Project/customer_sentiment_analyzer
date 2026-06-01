@@ -10,7 +10,6 @@ import LoginScreen from './pages/login-screen';
 import VoiceAnalysisHub from './pages/voice-analysis-hub';
 import CustomerInsights from './pages/customer-insights';
 import SentimentOverview from './pages/sentiment-overview';
-import PerformanceAnalytics from './pages/performance-analytics';
 import CallDetails from './pages/call-details';
 import AgentPerformanceCards from './pages/agent-performance-cards';
 import AdminUserManagement from './pages/admin-user-management';
@@ -71,14 +70,6 @@ const Routes = () => {
               }
             />
 
-            <Route
-              path="/performance-analytics"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <PerformanceAnalytics />
-                </ProtectedRoute>
-              }
-            />
 
             <Route
               path="/call-details/:callId"
