@@ -26,13 +26,13 @@ const KPICard = ({ title, value, change, changeType, icon, sparklineData }) => {
       </div>
       <div className="space-y-2">
         <p className="text-3xl font-bold text-foreground">{value}</p>
-        
+
         <div className="flex items-center gap-2">
           <div className={`flex items-center gap-1 ${getChangeColor()}`}>
             <Icon name={getChangeIcon()} size={16} />
             <span className="text-sm font-medium">{change}</span>
           </div>
-          <span className="text-xs text-muted-foreground">vs last period</span>
+
         </div>
       </div>
       {sparklineData && (

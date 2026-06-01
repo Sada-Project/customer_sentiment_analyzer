@@ -9,27 +9,42 @@ export async function fetchAgents({ department } = {}) {
 
   const { data, error } = await query.order('performance_score', { ascending: false });
 
+  let rows = [];
   if (error) {
     // Fallback to agents table directly
     const fallback = await supabase
       .from('agents')
-      .select('id, name, role_title, email, is_online, last_seen, performance_score, csat_score, tickets_solved_total, tickets_solved_trend, fcr_rate, fcr_trend, avg_handle_time, open_tickets')
+      .select('id, name, role_title, email, is_online, last_seen, performance_score, csat_score, tickets_solved_total, tickets_solved_trend, fcr_rate, fcr_trend, avg_handle_time, open_tickets, user_profile_id')
       .order('performance_score', { ascending: false });
     if (fallback.error) throw new Error(fallback.error.message);
-    return (fallback.data ?? []).map(mapAgent);
+    rows = fallback.data ?? [];
+  } else {
+    rows = data ?? [];
   }
 
-  return (data ?? []).map(mapAgent);
+  // ── Batch-fetch avatar_url from user_profiles ────────────────────────────────
+  const profileIds = rows.map(r => r.user_profile_id).filter(Boolean);
+  let avatarMap = {};
+  if (profileIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('id, avatar_url')
+      .in('id', profileIds);
+    (profiles ?? []).forEach(p => { avatarMap[p.id] = p.avatar_url; });
+  }
+
+  return rows.map(a => mapAgent(a, avatarMap[a.user_profile_id] ?? null));
 }
 
 // ─── Map DB row → AgentCard props ─────────────────────────────────────────────
-function mapAgent(a) {
+function mapAgent(a, avatarUrl = null) {
   return {
     id:               a.id,
     name:             a.name,
     role:             a.role_title ?? '—',
     department:       a.department ?? null,
     email:            a.email ?? null,
+    avatarUrl:        avatarUrl,
     isOnline:         a.is_online ?? false,
     lastSeen:         a.last_seen ?? null,
     performanceScore: Number(a.performance_score ?? 0).toFixed(0),

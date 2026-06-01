@@ -5,17 +5,27 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import Icon from '../../components/AppIcon';
 
-// ── Avatar options (preset avatars the user can pick) ─────────────────────────
+// ── Avatar options — same warm light skin tone, varied hair & background ─────
+// skinColor=f2d3b1 matches the reference image (warm peach/fair complexion)
+const BASE = 'https://api.dicebear.com/9.x/micah/svg';
+const SKIN = 'f2d3b1';
+
 const AVATAR_PRESETS = [
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Felix',
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Aneka',
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Garfield',
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Lucky',
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Cleo',
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Milo',
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Nala',
-  'https://api.dicebear.com/9.x/avataaars/svg?seed=Zoe',
+  { url: `${BASE}?seed=Alex&skinColor=${SKIN}&backgroundColor=b6e3f4&hair=fonze&mouth=smile` },
+  { url: `${BASE}?seed=Emma&skinColor=${SKIN}&backgroundColor=c0aede&hair=dannyPhantom&mouth=smile` },
+  { url: `${BASE}?seed=Carlos&skinColor=${SKIN}&backgroundColor=d1d4f9&hair=mrT&mouth=smile` },
+  { url: `${BASE}?seed=Layla&skinColor=${SKIN}&backgroundColor=ffd5dc&hair=full&mouth=smile` },
+  { url: `${BASE}?seed=James&skinColor=${SKIN}&backgroundColor=b6e3f4&hair=dougFunny&mouth=smile` },
+  { url: `${BASE}?seed=Amina&skinColor=${SKIN}&backgroundColor=ffdfbf&hair=full&mouth=smile` },
+  { url: `${BASE}?seed=Omar&skinColor=${SKIN}&backgroundColor=c0aede&hair=fonze&mouth=smile` },
+  { url: `${BASE}?seed=Sofia&skinColor=${SKIN}&backgroundColor=d1d4f9&hair=dannyPhantom&mouth=smile` },
+  { url: `${BASE}?seed=Marcus&skinColor=${SKIN}&backgroundColor=ffd5dc&hair=mrT&mouth=smile` },
+  { url: `${BASE}?seed=Nadia&skinColor=${SKIN}&backgroundColor=b6e3f4&hair=full&mouth=smile` },
+  { url: `${BASE}?seed=Kofi&skinColor=${SKIN}&backgroundColor=d1d4f9&hair=dannyPhantom&mouth=smile` },
+  { url: `${BASE}?seed=Priya&skinColor=${SKIN}&backgroundColor=ffdfbf&hair=dougFunny&mouth=smile` },
 ];
+
+
 
 // ── Small reusable toast ───────────────────────────────────────────────────────
 const Toast = ({ message, type, onClose }) => {
@@ -93,6 +103,7 @@ const ProfilePage = () => {
   const [avatarUrl, setAvatarUrl]       = useState(profile?.avatar_url || '');
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
+  const fileInputRef                    = useRef(null);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
   const [toast, setToast]               = useState(null);
@@ -107,23 +118,23 @@ const ProfilePage = () => {
   }, [profile]);
 
   // ── Derived avatar display ───────────────────────────────────────────────────
-  const displayAvatar = avatarUrl || `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(profile?.email || 'user')}`;
+  const displayAvatar = avatarUrl || `${BASE}?seed=${encodeURIComponent(profile?.email || 'user')}&skinColor=d4a574&backgroundColor=b6e3f4`;
 
   // ── Save Name ────────────────────────────────────────────────────────────────
   const handleSaveName = async (e) => {
     e?.preventDefault();
     const errors = {};
-    if (!nameForm.full_name.trim()) errors.full_name = 'الاسم مطلوب';
-    if (nameForm.full_name.trim().length < 2) errors.full_name = 'الاسم قصير جداً';
+    if (!nameForm.full_name.trim()) errors.full_name = 'Name is required';
+    if (nameForm.full_name.trim().length < 2) errors.full_name = 'Name is too short';
     setNameErrors(errors);
     if (Object.keys(errors).length) return;
 
     setNameSaving(true);
     try {
       await updateProfile({ full_name: nameForm.full_name.trim() });
-      showToast('تم تحديث الاسم بنجاح ✓');
+      showToast('Name updated successfully ✓');
     } catch (err) {
-      showToast(err.message || 'حدث خطأ أثناء التحديث', 'error');
+      showToast(err.message || 'Failed to update name', 'error');
     } finally {
       setNameSaving(false);
     }
@@ -133,9 +144,9 @@ const ProfilePage = () => {
   const handleSavePassword = async (e) => {
     e?.preventDefault();
     const errors = {};
-    if (!pwdForm.new) errors.new = 'كلمة المرور الجديدة مطلوبة';
-    if (pwdForm.new && pwdForm.new.length < 8) errors.new = 'يجب أن تكون 8 أحرف على الأقل';
-    if (pwdForm.new !== pwdForm.confirm) errors.confirm = 'كلمتا المرور غير متطابقتين';
+    if (!pwdForm.new) errors.new = 'New password is required';
+    if (pwdForm.new && pwdForm.new.length < 8) errors.new = 'Must be at least 8 characters';
+    if (pwdForm.new !== pwdForm.confirm) errors.confirm = 'Passwords do not match';
     setPwdErrors(errors);
     if (Object.keys(errors).length) return;
 
@@ -144,9 +155,9 @@ const ProfilePage = () => {
       const { error } = await supabase.auth.updateUser({ password: pwdForm.new });
       if (error) throw error;
       setPwdForm({ current: '', new: '', confirm: '' });
-      showToast('تم تغيير كلمة المرور بنجاح ✓');
+      showToast('Password changed successfully ✓');
     } catch (err) {
-      showToast(err.message || 'فشل تغيير كلمة المرور', 'error');
+      showToast(err.message || 'Failed to change password', 'error');
     } finally {
       setPwdSaving(false);
     }
@@ -159,15 +170,50 @@ const ProfilePage = () => {
     setAvatarSaving(true);
     try {
       await updateProfile({ avatar_url: url });
-      showToast('تم تحديث الصورة الشخصية ✓');
+      showToast('Profile picture updated ✓');
     } catch (err) {
-      showToast(err.message || 'حدث خطأ', 'error');
+      showToast(err.message || 'Something went wrong', 'error');
     } finally {
       setAvatarSaving(false);
     }
   };
 
-  const roleLabel = profile?.role === 'admin' ? 'مدير النظام' : 'وكيل';
+  // ── Upload custom photo ───────────────────────────────────────────────────────
+  const handleUploadPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate: image only, max 2 MB
+    if (!file.type.startsWith('image/')) {
+      showToast('Please select an image file.', 'error');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Image must be smaller than 2 MB.', 'error');
+      return;
+    }
+
+    setAvatarSaving(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target.result;
+      setAvatarUrl(dataUrl);
+      setShowAvatarPicker(false);
+      try {
+        await updateProfile({ avatar_url: dataUrl });
+        showToast('Profile picture updated ✓');
+      } catch (err) {
+        showToast(err.message || 'Upload failed', 'error');
+      } finally {
+        setAvatarSaving(false);
+        // Reset so the same file can be picked again
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const roleLabel = profile?.role === 'admin' ? 'System Admin' : 'Agent';
   const roleBadge = profile?.role === 'admin'
     ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
     : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
@@ -181,20 +227,20 @@ const ProfilePage = () => {
 
           {/* ── Page title ── */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground">الملف الشخصي</h1>
-            <p className="text-muted-foreground mt-1">إدارة معلوماتك الشخصية وإعدادات الأمان</p>
+            <h1 className="text-3xl font-bold text-foreground">My Profile</h1>
+            <p className="text-muted-foreground mt-1">Manage your personal information and security settings</p>
           </div>
 
           <div className="flex flex-col gap-6">
 
             {/* ════════════════════ AVATAR SECTION ════════════════════ */}
-            <Section icon="UserCircle" title="الصورة الشخصية">
+            <Section icon="UserCircle" title="Profile Picture">
               <div className="flex items-center gap-6">
                 {/* Current avatar */}
                 <div className="relative">
                   <img
                     src={displayAvatar}
-                    alt="الصورة الشخصية"
+                    alt="Profile picture"
                     className="w-24 h-24 rounded-full object-cover border-4 border-border shadow-md bg-muted"
                   />
                   {avatarSaving && (
@@ -217,29 +263,55 @@ const ProfilePage = () => {
                       className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors font-medium"
                     >
                       <Icon name="ImagePlus" size={16} />
-                      تغيير الصورة
+                      Change Photo
                     </button>
                   </div>
                 </div>
               </div>
 
+              {/* Hidden file input for photo upload */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleUploadPhoto}
+              />
+
               {/* Avatar picker grid */}
               {showAvatarPicker && (
                 <div className="mt-5 pt-5 border-t border-border">
-                  <p className="text-sm text-muted-foreground mb-3">اختر صورة من المجموعة:</p>
+                  <p className="text-sm font-medium text-foreground mb-4">Choose an avatar or upload your photo:</p>
                   <div className="grid grid-cols-4 gap-3">
-                    {AVATAR_PRESETS.map((url, i) => (
+
+                    {/* Upload your own photo tile — always first */}
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="relative p-1 rounded-xl border-2 border-dashed border-primary/50 hover:border-primary hover:bg-primary/5 transition-all hover:scale-105 aspect-square flex flex-col items-center justify-center gap-1.5"
+                    >
+                      <Icon name="Upload" size={20} className="text-primary/70" />
+                      <span className="text-[10px] text-primary/70 font-medium text-center leading-tight">Upload<br/>Photo</span>
+                    </button>
+
+                    {/* Preset avatars */}
+                    {AVATAR_PRESETS.map(({ url }, i) => (
                       <button
                         key={i}
                         onClick={() => handleSelectAvatar(url)}
-                        className={`relative rounded-xl overflow-hidden border-2 transition-all hover:scale-105 ${
-                          avatarUrl === url ? 'border-primary ring-2 ring-primary/40' : 'border-border hover:border-primary/50'
+                        className={`relative p-1 rounded-xl border-2 transition-all hover:scale-105 overflow-hidden ${
+                          avatarUrl === url
+                            ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                            : 'border-border hover:border-primary/50 hover:bg-muted/30'
                         }`}
                       >
-                        <img src={url} alt={`avatar ${i + 1}`} className="w-full aspect-square object-cover bg-muted" />
+                        <img
+                          src={url}
+                          alt="avatar"
+                          className="w-full aspect-square rounded-lg object-cover"
+                        />
                         {avatarUrl === url && (
-                          <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                            <Icon name="Check" size={20} className="text-primary" />
+                          <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-primary rounded-full flex items-center justify-center shadow">
+                            <Icon name="Check" size={12} className="text-white" />
                           </div>
                         )}
                       </button>
@@ -247,18 +319,18 @@ const ProfilePage = () => {
                   </div>
                   <button
                     onClick={() => setShowAvatarPicker(false)}
-                    className="mt-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    className="mt-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    إلغاء
+                    Cancel
                   </button>
                 </div>
               )}
             </Section>
 
             {/* ════════════════════ NAME SECTION ════════════════════ */}
-            <Section icon="User" title="تعديل الاسم">
+            <Section icon="User" title="Edit Name">
               <form onSubmit={handleSaveName} className="flex flex-col gap-4">
-                <Field label="الاسم الكامل" required error={nameErrors.full_name}>
+                <Field label="Full Name" required error={nameErrors.full_name}>
                   <Input
                     type="text"
                     value={nameForm.full_name}
@@ -266,7 +338,7 @@ const ProfilePage = () => {
                       setNameForm({ full_name: e.target.value });
                       if (nameErrors.full_name) setNameErrors({});
                     }}
-                    placeholder="أدخل اسمك الكامل"
+                    placeholder="Enter your full name"
                   />
                 </Field>
 
@@ -276,18 +348,18 @@ const ProfilePage = () => {
                     disabled={nameSaving || nameForm.full_name.trim() === (profile?.full_name || '')}
                     className="inline-flex items-center gap-2 px-5 py-2.5 text-sm rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {nameSaving ? <><Icon name="Loader2" size={16} className="animate-spin" /> جارٍ الحفظ…</> : <><Icon name="Save" size={16} /> حفظ الاسم</>}
+                    {nameSaving ? <><Icon name="Loader2" size={16} className="animate-spin" /> Saving…</> : <><Icon name="Save" size={16} /> Save Name</>}
                   </button>
                 </div>
               </form>
             </Section>
 
             {/* ════════════════════ PASSWORD SECTION ════════════════════ */}
-            <Section icon="Lock" title="تغيير كلمة المرور">
+            <Section icon="Lock" title="Change Password">
               <form onSubmit={handleSavePassword} className="flex flex-col gap-4">
 
                 {/* New password */}
-                <Field label="كلمة المرور الجديدة" required error={pwdErrors.new}>
+                <Field label="New Password" required error={pwdErrors.new}>
                   <div className="relative">
                     <Input
                       type={showPwd.new ? 'text' : 'password'}
@@ -301,11 +373,11 @@ const ProfilePage = () => {
                       <Icon name={showPwd.new ? 'EyeOff' : 'Eye'} size={16} />
                     </button>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">يجب أن تكون 8 أحرف على الأقل</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Must be at least 8 characters</p>
                 </Field>
 
                 {/* Confirm password */}
-                <Field label="تأكيد كلمة المرور الجديدة" required error={pwdErrors.confirm}>
+                <Field label="Confirm New Password" required error={pwdErrors.confirm}>
                   <div className="relative">
                     <Input
                       type={showPwd.confirm ? 'text' : 'password'}
@@ -339,7 +411,7 @@ const ProfilePage = () => {
                     <p className="text-xs text-muted-foreground">
                       {(() => {
                         const s = [pwdForm.new.length >= 8, /[A-Z]/.test(pwdForm.new), /[0-9]/.test(pwdForm.new), /[^A-Za-z0-9]/.test(pwdForm.new)].filter(Boolean).length;
-                        return ['ضعيفة جداً', 'ضعيفة', 'متوسطة', 'قوية'][s - 1] || '';
+                        return ['Very Weak', 'Weak', 'Medium', 'Strong'][s - 1] || '';
                       })()}
                     </p>
                   </div>
@@ -351,20 +423,20 @@ const ProfilePage = () => {
                     disabled={pwdSaving || !pwdForm.new || !pwdForm.confirm}
                     className="inline-flex items-center gap-2 px-5 py-2.5 text-sm rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {pwdSaving ? <><Icon name="Loader2" size={16} className="animate-spin" /> جارٍ التغيير…</> : <><Icon name="Shield" size={16} /> تغيير كلمة المرور</>}
+                    {pwdSaving ? <><Icon name="Loader2" size={16} className="animate-spin" /> Saving…</> : <><Icon name="Shield" size={16} /> Change Password</>}
                   </button>
                 </div>
               </form>
             </Section>
 
             {/* ════════════════════ ACCOUNT INFO ════════════════════ */}
-            <Section icon="Info" title="معلومات الحساب">
+            <Section icon="Info" title="Account Information">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 {[
-                  { label: 'البريد الإلكتروني', value: profile?.email },
-                  { label: 'الدور', value: roleLabel },
-                  { label: 'الحالة', value: profile?.is_active ? 'نشط' : 'معطّل' },
-                  { label: 'تاريخ الانضمام', value: profile?.created_at ? new Date(profile.created_at).toLocaleDateString('ar-SA') : '—' },
+                  { label: 'Email', value: profile?.email },
+                  { label: 'Role', value: roleLabel },
+                  { label: 'Status', value: profile?.is_active ? 'Active' : 'Inactive' },
+                  { label: 'Member Since', value: profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—' },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-muted/30 rounded-lg p-3">
                     <p className="text-muted-foreground text-xs mb-0.5">{label}</p>

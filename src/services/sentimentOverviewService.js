@@ -62,8 +62,36 @@ export async function fetchTranscriptionConfidence() {
   const avg = rows.reduce((sum, r) => sum + (r.transcription_confidence ?? 0), 0) / rows.length;
   return Number(avg.toFixed(1));
 }
+// ─── OVERALL SENTIMENT ───────────────────────────────────────────────────────
+// Returns the dominant sentiment label + its percentage across all completed calls.
+export async function fetchOverallSentiment() {
+  const { data, error } = await supabase
+    .from('call_recordings')
+    .select('sentiment')
+    .eq('status', 'completed')
+    .not('sentiment', 'is', null);
 
-// ─── REAL-TIME EMOTION TIMELINE ───────────────────────────────────────────────
+  if (error) throw new Error(`Overall sentiment fetch failed: ${error.message}`);
+
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
+
+  // Count each sentiment
+  const counts = { satisfied: 0, neutral: 0, frustrated: 0, angry: 0 };
+  rows.forEach(r => { if (counts[r.sentiment] !== undefined) counts[r.sentiment]++; });
+
+  // Find dominant
+  const dominant = Object.entries(counts).sort(([, a], [, b]) => b - a)[0];
+  const pct = ((dominant[1] / rows.length) * 100).toFixed(1);
+
+  return {
+    label:      dominant[0].charAt(0).toUpperCase() + dominant[0].slice(1),
+    percentage: Number(pct),
+    total:      rows.length,
+    counts,
+  };
+}
+
 // Groups completed call_recordings by 3-hour time buckets for the last N hours.
 // Falls back to sentiment_timeline table if no call_recordings data exists.
 export async function fetchSentimentTimeline(hours = 24) {
