@@ -54,39 +54,44 @@ export async function fetchDepartments() {
   return data ?? [];
 }
 
-// ─── Summary stats — computed live from call_recordings ───────────────────────
+// ─── Summary stats — computed live from vw_agent_performance ──────────────────
+// Uses the view so is_online is dynamic (last_login > NOW()-30min), not static.
 export async function fetchAgentStats() {
-  // Get agent summary from agents table
-  const { data: agentRows, error: agentErr } = await supabase
-    .from('agents')
+  // Read from the same view the cards use — guarantees is_online is consistent
+  const { data: viewRows, error: viewErr } = await supabase
+    .from('vw_agent_performance')
     .select('id, is_online, performance_score, csat_score, tickets_solved_total');
 
-  if (agentErr) throw new Error(agentErr.message);
+  if (viewErr) {
+    // Fallback to agents table if view is unavailable
+    const { data: agentRows, error: agentErr } = await supabase
+      .from('agents')
+      .select('id, is_online, performance_score, csat_score, tickets_solved_total');
+    if (agentErr) throw new Error(agentErr.message);
+    return computeStats(agentRows ?? []);
+  }
 
-  const agents = agentRows ?? [];
-  const total  = agents.length;
+  return computeStats(viewRows ?? []);
+}
 
-  // Also get real-time call count from call_recordings (most accurate)
-  const { count: liveCallCount } = await supabase
-    .from('call_recordings')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'completed')
-    .not('agent_id', 'is', null);
+function computeStats(rows) {
+  const total = rows.length;
 
   return {
-    totalAgents:       total,
-    onlineAgents:      agents.filter(a => a.is_online).length,
-    avgPerformance:    total
-      ? Math.round(agents.reduce((s, a) => s + (Number(a.performance_score) || 0), 0) / total)
+    totalAgents:      total,
+    // is_online from vw_agent_performance is computed as last_login > NOW()-30min
+    onlineAgents:     rows.filter(a => a.is_online === true).length,
+    avgPerformance:   total
+      ? Math.round(rows.reduce((s, a) => s + (Number(a.performance_score) || 0), 0) / total)
       : 0,
     avgCsat: total
-      ? Math.round(agents.reduce((s, a) => s + (Number(a.csat_score) || 0), 0) / total)
+      ? Math.round(rows.reduce((s, a) => s + (Number(a.csat_score) || 0), 0) / total)
       : 0,
-    // Use live count from call_recordings if available, else sum from agents table
-    totalCallsHandled: liveCallCount ??
-      agents.reduce((s, a) => s + (a.tickets_solved_total ?? 0), 0),
+    totalCallsHandled: rows.reduce((s, a) => s + (a.tickets_solved_total ?? 0), 0),
   };
 }
+
+
 
 // ─── Manually trigger a stat refresh for the current user's agent ─────────────
 // Call this after a call completes as a safety net (trigger handles it automatically)
