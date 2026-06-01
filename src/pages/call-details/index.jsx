@@ -3,11 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../../components/ui/Header';
 import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
-import GeminiAnalysisPanel from '../../components/GeminiAnalysisPanel';
 import SentimentAlertFeed from '../customer-insights/components/SentimentAlertFeed';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { supabase } from '../../lib/supabase';
-import { extractTopics } from '../../services/geminiService';
+import { extractTopics, checkScriptCompliance } from '../../services/geminiService';
+
 
 import {
   fetchCallById,
@@ -34,6 +34,10 @@ const CallDetails = () => {
   const [aiTopics,       setAiTopics]       = useState([]);
   const [topicsLoading,  setTopicsLoading]  = useState(false);
   const [topicsError,    setTopicsError]    = useState(null);
+  // AI script compliance
+  const [qaAI,           setQaAI]           = useState([]);
+  const [qaLoading,      setQaLoading]      = useState(false);
+  const [qaError,        setQaError]        = useState(null);
 
   useEffect(() => {
     if (!callId) return;
@@ -100,6 +104,41 @@ const CallDetails = () => {
       .then(result => setAiTopics(Array.isArray(result) ? result : []))
       .catch(err   => setTopicsError(err.message ?? 'AI topics failed'))
       .finally(()  => setTopicsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript, callData?.id]);
+
+  // ── Auto-run Script Compliance check once transcript is available ────────────
+  const QA_CRITERIA = [
+    {
+      id:          'greeting',
+      title:       'Opening Greeting',
+      description: 'Agent used a professional welcome/greeting phrase at the start of the call (e.g. "Thank you for calling", "How may I help you", "Good morning/afternoon", "Welcome", or similar).',
+    },
+    {
+      id:          'closing',
+      title:       'Closing Etiquette',
+      description: 'Agent properly closed the call with a polite farewell or confirmation phrase (e.g. "Is there anything else I can help you with", "Thank you for calling", "Have a great day", or similar).',
+    },
+  ];
+
+  const runComplianceCheck = (transcriptSegs, fallbackText) => {
+    const plainText = transcriptSegs
+      .map(s => `${s.speaker}: ${s.message}`)
+      .join('\n')
+      .trim();
+    const text = plainText || (fallbackText ?? '');
+    if (!text) return;
+    setQaLoading(true);
+    setQaError(null);
+    checkScriptCompliance(text, QA_CRITERIA)
+      .then(results => setQaAI(Array.isArray(results) ? results : []))
+      .catch(err   => setQaError(err.message ?? 'Compliance check failed'))
+      .finally(()  => setQaLoading(false));
+  };
+
+  useEffect(() => {
+    if (!transcript.length && !callData?.transcript_text) return;
+    runComplianceCheck(transcript, callData?.transcript_text);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, callData?.id]);
 
@@ -241,10 +280,6 @@ const CallDetails = () => {
                 <h1 className="text-3xl font-bold text-foreground mb-2">Call Details</h1>
                 <p className="text-muted-foreground">Comprehensive analysis and transcript review</p>
               </div>
-              <div className="flex gap-3">
-                <Button variant="outline" iconName="Download" iconPosition="left">Export</Button>
-                <Button variant="outline" iconName="Share2"   iconPosition="left">Share</Button>
-              </div>
             </div>
           </div>
 
@@ -253,8 +288,20 @@ const CallDetails = () => {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Customer</p>
-                <p className="text-base font-semibold text-foreground">{customer?.full_name ?? customer?.company_name ?? '—'}</p>
-                <p className="text-xs text-muted-foreground">{customer?.customer_ref ?? '—'}</p>
+                {(customer?.full_name ?? customer?.company_name) ? (
+                  <>
+                    <p className="text-base font-semibold text-foreground">{customer.full_name ?? customer.company_name}</p>
+                    <p className="text-xs text-muted-foreground">{customer?.customer_ref ?? callData?.call_ref ?? '—'}</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <Icon name="UserX" size={15} className="text-muted-foreground" />
+                      <p className="text-base font-semibold text-muted-foreground">Unknown Customer</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{callData?.call_ref ?? '—'}</p>
+                  </>
+                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Agent</p>
@@ -466,32 +513,125 @@ const CallDetails = () => {
             </div>
 
             <div className="bg-card border border-border rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-foreground mb-4">Script Compliance</h3>
-              <div className="space-y-4">
-                {displayQA.map((check, i) => (
-                  <div key={i} className="border-b border-border pb-4 last:border-0 last:pb-0">
-                    <div className="flex items-start justify-between mb-2">
-                      <p className="text-sm font-medium text-foreground">{check.item}</p>
-                      {check.status === 'pass' ? (
-                        <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 rounded-full">
-                          <Icon name="CheckCircle2" size={14} className="text-emerald-600" />
-                          <span className="text-xs font-medium text-emerald-600">Pass ✅</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 px-2 py-0.5 bg-rose-500/10 rounded-full">
-                          <Icon name="XCircle" size={14} className="text-rose-600" />
-                          <span className="text-xs font-medium text-rose-600">Fail ❌</span>
-                        </div>
-                      )}
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-foreground">Script Compliance</h3>
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 font-medium">
+                    <Icon name="Sparkles" size={11} />
+                    Gemini AI
+                  </span>
+                </div>
+                {/* Retry */}
+                {!qaLoading && (
+                  <button
+                    onClick={() => runComplianceCheck(transcript, callData?.transcript_text)}
+                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+                    title="Re-run compliance check"
+                  >
+                    <Icon name="RefreshCw" size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Score summary — only when results available */}
+              {!qaLoading && qaAI.length > 0 && (() => {
+                const passed = qaAI.filter(r => r.passed).length;
+                const total  = qaAI.length;
+                const pct    = Math.round((passed / total) * 100);
+                const color  = pct === 100 ? 'text-emerald-400' : pct >= 50 ? 'text-amber-400' : 'text-rose-400';
+                const barColor = pct === 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+                return (
+                  <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-muted-foreground">Compliance Score</span>
+                      <span className={`text-sm font-bold ${color}`}>{pct}% ({passed}/{total})</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-2">{check.description}</p>
-                    {check.details && (
-                      <div className="bg-muted/30 rounded p-2">
-                        <p className="text-xs text-muted-foreground italic">{check.details}</p>
-                      </div>
-                    )}
+                    <div className="h-1.5 bg-border rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-700 ${barColor}`} style={{ width: `${pct}%` }} />
+                    </div>
                   </div>
-                ))}
+                );
+              })()}
+
+              {/* Loading */}
+              {qaLoading && (
+                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                  <div className="relative w-10 h-10">
+                    <div className="absolute inset-0 rounded-full border-2 border-violet-500/20" />
+                    <div className="absolute inset-0 rounded-full border-t-2 border-violet-500 animate-spin" />
+                    <Icon name="ShieldCheck" size={16} className="absolute inset-0 m-auto text-violet-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground animate-pulse">Gemini is verifying script compliance…</p>
+                </div>
+              )}
+
+              {/* Error */}
+              {!qaLoading && qaError && (
+                <div className="flex items-start gap-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg mb-3">
+                  <Icon name="AlertTriangle" size={14} className="text-rose-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-rose-400">{qaError}</p>
+                </div>
+              )}
+
+              {/* Results */}
+              {!qaLoading && qaAI.length > 0 && (
+                <div className="space-y-3">
+                  {QA_CRITERIA.map((criterion, i) => {
+                    const result = qaAI.find(r => r.criteria_id === criterion.id) ?? qaAI[i];
+                    const passed = result?.passed ?? false;
+                    return (
+                      <div key={criterion.id} className={`rounded-xl border p-4 transition-all ${
+                        passed
+                          ? 'bg-emerald-500/5 border-emerald-500/20'
+                          : 'bg-rose-500/5 border-rose-500/20'
+                      }`}>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              passed ? 'bg-emerald-500/20' : 'bg-rose-500/20'
+                            }`}>
+                              <Icon
+                                name={passed ? 'CheckCircle2' : 'XCircle'}
+                                size={16}
+                                className={passed ? 'text-emerald-500' : 'text-rose-500'}
+                              />
+                            </div>
+                            <p className="text-sm font-semibold text-foreground">{criterion.title}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0 ${
+                            passed
+                              ? 'bg-emerald-500/10 text-emerald-400'
+                              : 'bg-rose-500/10 text-rose-400'
+                          }`}>
+                            {passed ? '✅ Pass' : '❌ Fail'}
+                          </span>
+                        </div>
+                        {/* AI explanation */}
+                        {result?.details && (
+                          <div className="ml-9 mt-1 px-3 py-2 bg-muted/40 rounded-lg">
+                            <p className="text-xs text-muted-foreground italic leading-relaxed">💬 {result.details}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!qaLoading && !qaError && qaAI.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
+                  <Icon name="MessageSquareOff" size={28} className="text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">No transcript available to check compliance</p>
+                </div>
+              )}
+
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Icon name="Sparkles" size={11} className="text-violet-400" />
+                  Verified by Gemini AI against QA script criteria
+                </p>
               </div>
             </div>
           </div>
@@ -656,28 +796,13 @@ const CallDetails = () => {
             )}
           </div>
 
-          {/* Gemini AI Analysis + Emotion Alerts — side by side */}
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <GeminiAnalysisPanel
-                transcript={displayTranscript.map(m => `${m.speaker === 'agent' ? 'Agent' : 'Customer'}: ${m.message}`).join('\n')}
-                callMeta={{
-                  customerName:    customer?.full_name ?? customer?.company_name,
-                  agentName:       agent?.name,
-                  interactionType: callData?.interaction_type,
-                  duration:        callData?.duration_seconds
-                    ? `${Math.floor(callData.duration_seconds / 60)}:${String(callData.duration_seconds % 60).padStart(2, '0')}`
-                    : undefined,
-                }}
-              />
-            </div>
-            <div className="lg:col-span-1">
-              <SentimentAlertFeed
-                alerts={callAlerts}
-                loading={loading}
-                onRefresh={refreshAlerts}
-              />
-            </div>
+          {/* Problem & Solution */}
+          <div className="mt-6">
+            <SentimentAlertFeed
+              transcript={displayTranscript}
+              transcriptText={callData?.transcript_text ?? ''}
+              loading={loading}
+            />
           </div>
 
         </div>

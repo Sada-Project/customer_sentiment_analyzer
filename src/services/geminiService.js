@@ -294,6 +294,33 @@ category must be one of: billing, technical, service, product, account, logistic
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 4b. PROBLEM & SOLUTION EXTRACTION
+// ─────────────────────────────────────────────────────────────────────────────
+export async function extractProblemAndSolution(transcript) {
+  const prompt = `
+You are a customer service analyst. Analyze this call transcript and identify:
+1. The main problem the customer is facing
+2. A clear, actionable solution recommendation for the agent/support team
+
+TRANSCRIPT:
+"""
+${transcript}
+"""
+
+Return ONLY valid JSON (no markdown):
+{
+  "problem": "Brief description of the main problem (1-2 sentences)",
+  "problem_category": "one of: billing, technical, service, product, account, other",
+  "severity": "one of: low, medium, high, critical",
+  "solution": "Clear actionable recommendation to solve the problem (1-2 sentences)",
+  "solution_type": "one of: immediate_action, escalation, follow_up, information, refund, technical_fix"
+}
+`;
+  const text = await callGemini(prompt);
+  return parseJSON(text, null);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 5. KEYWORD EXTRACTION
 // ─────────────────────────────────────────────────────────────────────────────
 export async function extractKeywords(transcript) {
