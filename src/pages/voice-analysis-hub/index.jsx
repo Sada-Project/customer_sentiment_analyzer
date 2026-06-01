@@ -112,6 +112,12 @@ const VoiceAnalysisHub = () => {
       const finalDurSecs  = (durSecs && isFinite(durSecs) && !isNaN(durSecs) && durSecs > 0) ? durSecs : recordedDuration;
       const durFormatted  = formatDur(finalDurSecs);
 
+      // ── Guaranteed playback URL ────────────────────────────────────────────
+      // Use the Supabase public URL if upload succeeded, otherwise create a
+      // temporary blob: URL so the Play button always works in this session.
+      // blob: URLs are auto-revoked on page unload — they are never persisted.
+      const playbackUrl = audioUrl ?? URL.createObjectURL(audioBlob);
+
       setCompletedAnalyses(prev => [{
         id:             dbId ?? `local_${Date.now()}`,
         fileName,
@@ -122,7 +128,7 @@ const VoiceAnalysisHub = () => {
         confidence:     result.sentiment?.sentiment_confidence ?? 0,
         transcript:     transcript.slice(0, 500) + (transcript.length > 500 ? '…' : ''),
         aiSummary:      result.summary?.summary,
-        audioUrl:       audioUrl ?? null,
+        audioUrl:       playbackUrl,
       }, ...prev]);
 
       // Also save duration to DB (use finalDurSecs — durSecs can be Infinity for WebM)
