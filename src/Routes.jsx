@@ -7,6 +7,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginScreen from './pages/login-screen';
+import LandingPage from './pages/landing';
 import VoiceAnalysisHub from './pages/voice-analysis-hub';
 import CustomerInsights from './pages/customer-insights';
 import SentimentOverview from './pages/sentiment-overview';
@@ -30,18 +31,9 @@ const Routes = () => {
         <ErrorBoundary>
           <ScrollToTop />
           <RouterRoutes>
-            {/* Public route */}
+            {/* Public routes — always accessible */}
+            <Route path="/" element={<LandingPage />} />
             <Route path="/login-screen" element={<LoginScreen />} />
-
-            {/* Root: redirect based on role */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <RoleBasedRedirect />
-                </ProtectedRoute>
-              }
-            />
 
             <Route
               path="/sentiment-overview"

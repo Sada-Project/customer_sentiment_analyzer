@@ -109,14 +109,14 @@ const DeleteConfirmDialog = ({ count, onConfirm, onCancel, loading }) => (
       <div className="w-14 h-14 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
         <Icon name="Trash2" size={28} color="#f43f5e" />
       </div>
-      <h3 className="text-lg font-semibold text-foreground mb-2">حذف {count} تسجيل؟</h3>
+      <h3 className="text-lg font-semibold text-foreground mb-2">Delete {count} recording{count !== 1 ? 's' : ''}?</h3>
       <p className="text-sm text-muted-foreground mb-6">
-        سيتم حذف التسجيلات المحددة والملفات الصوتية نهائياً. لا يمكن التراجع عن هذا الإجراء.
+        The selected recordings and audio files will be permanently deleted. This action cannot be undone.
       </p>
       <div className="flex gap-3">
-        <Button variant="outline" className="flex-1" onClick={onCancel} disabled={loading}>إلغاء</Button>
+        <Button variant="outline" className="flex-1" onClick={onCancel} disabled={loading}>Cancel</Button>
         <Button variant="destructive" className="flex-1" onClick={onConfirm} disabled={loading} iconName={loading ? 'Loader2' : 'Trash2'} iconPosition="left">
-          {loading ? 'جارٍ الحذف…' : 'حذف'}
+          {loading ? 'Deleting…' : 'Delete'}
         </Button>
       </div>
     </div>
@@ -194,7 +194,7 @@ const CallRecordings = () => {
       setShowConfirm(false);
       setSelectMode(false);
     } catch (err) {
-      alert(`خطأ في الحذف: ${err.message}`);
+      alert(`Delete error: ${err.message}`);
     } finally {
       setDeleting(false);
     }
@@ -243,19 +243,19 @@ const CallRecordings = () => {
             {/* Select / Delete toolbar */}
             {!selectMode ? (
               <Button variant="outline" size="sm" iconName="CheckSquare" iconPosition="left" onClick={() => setSelectMode(true)}>
-                تحديد
+                Select
               </Button>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{selected.size} محدد</span>
-                <Button variant="ghost" size="sm" onClick={exitSelectMode}>إلغاء</Button>
+                <span className="text-sm text-muted-foreground">{selected.size} selected</span>
+                <Button variant="ghost" size="sm" onClick={exitSelectMode}>Cancel</Button>
                 <Button
                   variant="destructive" size="sm"
                   iconName="Trash2" iconPosition="left"
                   disabled={selected.size === 0}
                   onClick={() => setShowConfirm(true)}
                 >
-                  حذف ({selected.size})
+                  Delete ({selected.size})
                 </Button>
               </div>
             )}
@@ -272,7 +272,7 @@ const CallRecordings = () => {
                 <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${allSelected ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
                   {allSelected && <Icon name="Check" size={10} color="white" />}
                 </div>
-                تحديد الكل
+                Select All
               </button>
             )}
 

@@ -77,11 +77,11 @@ const VoiceAnalysisHub = () => {
   const processAudio = useCallback(async (audioBlob, fileName, dbId = null, audioUrl = null, recordedDuration = 0) => {
     if (!audioBlob) return;
     if (geminiStatus === 'offline') {
-      setActiveJob({ fileName, step: '❌ Gemini غير متصل — تحقق من مفتاح الـ API', progress: 0, error: true });
+      setActiveJob({ fileName, step: '❌ Gemini not connected — check your API key', progress: 0, error: true });
       return;
     }
 
-    setActiveJob({ fileName, step: 'جارٍ تحويل الصوت إلى نص…', progress: 5, transcript: null, result: null });
+    setActiveJob({ fileName, step: 'Transcribing audio…', progress: 5, transcript: null, result: null });
 
     try {
       // ── Step 1: Transcribe ─────────────────────────────────────────────────
@@ -93,7 +93,7 @@ const VoiceAnalysisHub = () => {
       setActiveJob(j => ({
         ...j,
         transcript,
-        step: `تم استخراج النص ✅ (${sttResult.word_count} كلمة) — جارٍ التحليل الشامل…`,
+        step: `Transcription done ✅ (${sttResult.word_count} words) — running full analysis…`,
         progress: 40,
       }));
 
@@ -103,7 +103,7 @@ const VoiceAnalysisHub = () => {
         (msg, pct) => setActiveJob(j => ({ ...j, step: msg, progress: pct ?? j.progress }))
       );
 
-      setActiveJob(j => ({ ...j, result, step: 'اكتمل التحليل بنجاح ✅', progress: 100 }));
+      setActiveJob(j => ({ ...j, result, step: 'Analysis complete ✅', progress: 100 }));
 
       // ── Step 3: Push to Recent Analyses list ───────────────────────────────
       const s            = result.sentiment?.sentiment ?? 'neutral';
@@ -175,7 +175,7 @@ const VoiceAnalysisHub = () => {
         console.info('[Audio] Uploaded to Storage:', audioUrl);
       } catch (e) {
         console.error('[Audio Upload Error]', e.message);
-        setActiveJob(j => ({ ...j, step: `⚠️ تحذير: فشل رفع الصوت — ${e.message}`, progress: j.progress }));
+        setActiveJob(j => ({ ...j, step: `⚠️ Warning: upload failed — ${e.message}`, progress: j.progress }));
       }
     }
 
@@ -219,7 +219,7 @@ const VoiceAnalysisHub = () => {
         console.info('[Audio] Uploaded to Storage:', audioUrl);
       } catch (e) {
         console.error('[Audio Upload Error]', e.message);
-        setActiveJob(j => j ? { ...j, step: `⚠️ تحذير: فشل رفع الصوت — ${e.message}` } : j);
+        setActiveJob(j => j ? { ...j, step: `⚠️ Warning: upload failed — ${e.message}` } : j);
       }
     }
 

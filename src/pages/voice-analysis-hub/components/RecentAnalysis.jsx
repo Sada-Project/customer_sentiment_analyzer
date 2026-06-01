@@ -181,7 +181,7 @@ const TranscriptModal = ({ analysis, onClose }) => {
             </p>
           ) : (
             <p className="text-sm text-muted-foreground italic text-center py-8">
-              لا يوجد نص متاح لهذا التسجيل.
+              No transcript available for this recording.
             </p>
           )}
         </div>
@@ -268,7 +268,7 @@ const RecentAnalysis = ({ analyses = [] }) => {
     if (analysis.audioUrl) {
       setActivePlayer(analysis);
     } else {
-      alert(`🎵 ${analysis.fileName}\n\nالملف الصوتي غير محفوظ في هذا السجل.\n\nيمكن تشغيل الملفات المرفوعة حديثاً فقط.`);
+      alert(`🎵 ${analysis.fileName}\n\nAudio file not stored in this record.\n\nOnly recently uploaded files can be played.`);
     }
   };
 
