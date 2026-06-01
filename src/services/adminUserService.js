@@ -98,6 +98,17 @@ export async function updateUser(userId, updates) {
 // Requires the "admins_delete_profiles" RLS policy to be present in Supabase.
 // If RLS silently blocks the delete (0 rows affected), we throw an error.
 export async function deleteUser(userId) {
+  // 1. Delete the linked agent row first (user_profile_id → agent)
+  //    Without this the agent card stays on the Agent Performance page.
+  await supabase
+    .from('agents')
+    .delete()
+    .eq('user_profile_id', userId)
+    .then(({ error }) => {
+      if (error) console.warn('agent delete warning:', error.message);
+    });
+
+  // 2. Delete the user_profile row
   const { error, count } = await supabase
     .from('user_profiles')
     .delete({ count: 'exact' })
@@ -105,11 +116,11 @@ export async function deleteUser(userId) {
 
   if (error) throw error;
 
-  // count === 0 means RLS blocked the delete silently — alert the admin
   if (count === 0) {
     throw new Error('لا توجد صلاحية لحذف هذا الحساب. تأكد من إضافة سياسة RLS للحذف في Supabase.');
   }
 }
+
 
 // ─── Invite / create user via Supabase Auth ───────────────────────────────────
 // Uses signUp() with anon key — works without service_role.
@@ -156,19 +167,51 @@ export async function inviteUser({ email, full_name, role, password }) {
     const { error: profileError } = await supabase
       .from('user_profiles')
       .upsert({
-        id: newUserId,
-        email: email.trim().toLowerCase(),
-        username: email.split('@')[0], // Added username to fix DB NOT NULL constraint
+        id:        newUserId,
+        email:     email.trim().toLowerCase(),
+        username:  email.split('@')[0],
         full_name: full_name?.trim() || email.split('@')[0],
-        role: role || 'agent',
+        role:      role || 'agent',
         is_active: true,
       }, { onConflict: 'id' });
 
     if (profileError) {
       console.warn('user_profiles upsert warning:', profileError.message);
-      // Don't throw — the auth user was created successfully
+    }
+
+    // ── 5. Create the agent row so the user appears in Agent Performance ──────
+    // Look up the default "support" department to assign by default.
+    const { data: defaultDept } = await supabase
+      .from('departments')
+      .select('id')
+      .eq('code', 'support')
+      .maybeSingle();
+
+    const { error: agentError } = await supabase
+      .from('agents')
+      .insert({
+        user_profile_id:     newUserId,
+        name:                full_name?.trim() || email.split('@')[0],
+        email:               email.trim().toLowerCase(),
+        role_title:          role === 'admin' ? 'Team Lead' : 'Support Agent',
+        department_id:       defaultDept?.id ?? null,
+        is_online:           false,
+        performance_score:   0,
+        csat_score:          0,
+        tickets_solved_total: 0,
+        fcr_rate:            0,
+        avg_handle_time:     0,
+        open_tickets:        0,
+      })
+      .select('id')
+      .single();
+
+    if (agentError && !agentError.message?.includes('duplicate')) {
+      console.warn('agent row creation warning:', agentError.message);
+      // Don't throw — user was created successfully
     }
   }
 
   return signUpData?.user;
 }
+
