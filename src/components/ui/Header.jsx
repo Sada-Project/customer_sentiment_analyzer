@@ -34,13 +34,6 @@ const Header = () => {
       roles: ['admin', 'agent'] // Both admin and agent
     },
     {
-      label: 'Performance',
-      path: '/performance-analytics',
-      icon: 'TrendingUp',
-      tooltip: 'Technical monitoring and AI model accuracy tracking',
-      roles: ['admin'] // Admin only
-    },
-    {
       label: 'Agent Performance',
       path: '/agent-performance-cards',
       icon: 'UserCheck',
