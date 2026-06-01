@@ -1,88 +1,205 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, Cell, CartesianGrid } from 'recharts';
 import Icon from '../../../components/AppIcon';
+import { supabase } from '../../../lib/supabase';
 
-const SentimentHeatmap = () => {
-  const [selectedPeriod, setSelectedPeriod] = useState('week');
+// ── Constants ─────────────────────────────────────────────────────────────────
+const DAYS_ORDER  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const HOURS_ORDER = ['00:00','02:00','04:00','06:00','08:00','10:00','12:00','14:00','16:00','18:00','20:00','22:00'];
+const DAY_NAMES   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Helper function to randomly distribute negative emotions
-  const getEmotionLabel = (sentiment) => {
-    if (sentiment >= 70) return 'Satisfied';
-    if (sentiment >= 50) return 'Neutral';
-    // Randomly distribute between Frustrated and Angry for negative sentiment
-    return Math.random() > 0.5 ? 'Frustrated' : 'Angry';
-  };
+const EMOTION_COLOR = {
+  Satisfied:  '#10B981',
+  Neutral:    '#64748b',
+  Frustrated: '#F59E0B',
+  Angry:      '#EF4444',
+};
 
-  const heatmapData = [
-    { hour: '00:00', day: 'Mon', sentiment: 72, interactions: 45, emotion: 'Satisfied' },
-    { hour: '04:00', day: 'Mon', sentiment: 68, interactions: 32, emotion: 'Neutral' },
-    { hour: '08:00', day: 'Mon', sentiment: 85, interactions: 120, emotion: 'Satisfied' },
-    { hour: '12:00', day: 'Mon', sentiment: 78, interactions: 95, emotion: 'Satisfied' },
-    { hour: '16:00', day: 'Mon', sentiment: 65, interactions: 88, emotion: 'Neutral' },
-    { hour: '20:00', day: 'Mon', sentiment: 58, interactions: 42, emotion: 'Neutral' },
-    { hour: '00:00', day: 'Tue', sentiment: 70, interactions: 38, emotion: 'Satisfied' },
-    { hour: '04:00', day: 'Tue', sentiment: 66, interactions: 28, emotion: 'Neutral' },
-    { hour: '08:00', day: 'Tue', sentiment: 82, interactions: 115, emotion: 'Satisfied' },
-    { hour: '12:00', day: 'Tue', sentiment: 76, interactions: 102, emotion: 'Satisfied' },
-    { hour: '16:00', day: 'Tue', sentiment: 62, interactions: 85, emotion: 'Neutral' },
-    { hour: '20:00', day: 'Tue', sentiment: 55, interactions: 45, emotion: 'Neutral' },
-    { hour: '00:00', day: 'Wed', sentiment: 35, interactions: 52, emotion: 'Angry' },
-    { hour: '04:00', day: 'Wed', sentiment: 42, interactions: 35, emotion: 'Frustrated' },
-    { hour: '08:00', day: 'Wed', sentiment: 88, interactions: 125, emotion: 'Satisfied' },
-    { hour: '12:00', day: 'Wed', sentiment: 80, interactions: 110, emotion: 'Satisfied' },
-    { hour: '16:00', day: 'Wed', sentiment: 68, interactions: 92, emotion: 'Neutral' },
-    { hour: '20:00', day: 'Wed', sentiment: 60, interactions: 48, emotion: 'Neutral' },
-    { hour: '00:00', day: 'Thu', sentiment: 73, interactions: 40, emotion: 'Satisfied' },
-    { hour: '04:00', day: 'Thu', sentiment: 69, interactions: 30, emotion: 'Neutral' },
-    { hour: '08:00', day: 'Thu', sentiment: 86, interactions: 118, emotion: 'Satisfied' },
-    { hour: '12:00', day: 'Thu', sentiment: 79, interactions: 105, emotion: 'Satisfied' },
-    { hour: '16:00', day: 'Thu', sentiment: 64, interactions: 90, emotion: 'Neutral' },
-    { hour: '20:00', day: 'Thu', sentiment: 57, interactions: 44, emotion: 'Neutral' },
-    { hour: '00:00', day: 'Fri', sentiment: 75, interactions: 48, emotion: 'Satisfied' },
-    { hour: '04:00', day: 'Fri', sentiment: 71, interactions: 33, emotion: 'Satisfied' },
-    { hour: '08:00', day: 'Fri', sentiment: 90, interactions: 130, emotion: 'Satisfied' },
-    { hour: '12:00', day: 'Fri', sentiment: 83, interactions: 115, emotion: 'Satisfied' },
-    { hour: '16:00', day: 'Fri', sentiment: 70, interactions: 95, emotion: 'Satisfied' },
-    { hour: '20:00', day: 'Fri', sentiment: 62, interactions: 50, emotion: 'Neutral' },
-    { hour: '00:00', day: 'Sat', sentiment: 28, interactions: 35, emotion: 'Angry' },
-    { hour: '08:00', day: 'Sat', sentiment: 45, interactions: 55, emotion: 'Frustrated' }
-  ];
+const scoreToEmotion = (score) => {
+  if (score >= 70) return 'Satisfied';
+  if (score >= 50) return 'Neutral';
+  if (score >= 30) return 'Frustrated';
+  return 'Angry';
+};
 
-  const getEmotionColor = (sentiment) => {
-    if (sentiment >= 70) return '#10B981'; // Emerald for Satisfied
-    if (sentiment >= 50) return '#64748b'; // Slate for Neutral
-    if (sentiment >= 30) return '#F59E0B'; // Amber for Frustrated
-    return '#EF4444'; // Rose/Red for Angry
-  };
+// ── Week helpers ──────────────────────────────────────────────────────────────
+const getWeekRange = (weekOffset = 0) => {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - daysToMonday - weekOffset * 7);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { start: monday, end: sunday };
+};
 
-  const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload?.length) {
-      const data = payload?.[0]?.payload;
-      return (
-        <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
-          <p className="text-sm font-semibold text-foreground mb-2">
-            {data?.day} at {data?.hour}
-          </p>
-          <div className="space-y-1 text-xs">
-            <p className="text-muted-foreground">
-              Sentiment Score: <span className="text-foreground font-medium">{data?.sentiment}%</span>
-            </p>
-            <p className="text-muted-foreground">
-              Interactions: <span className="text-foreground font-medium">{data?.interactions}</span>
-            </p>
-            <p className="text-muted-foreground">
-              Emotion: <span className="text-foreground font-medium">{data?.emotion}</span>
-            </p>
-          </div>
-        </div>
+const formatWeekLabel = (weekOffset, range) => {
+  if (weekOffset === 0) return 'This Week';
+  if (weekOffset === 1) return 'Last Week';
+  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(range.start)} – ${fmt(range.end)}`;
+};
+
+// ── Aggregate raw DB rows → heatmap points ────────────────────────────────────
+const aggregateCalls = (calls) => {
+  if (!calls.length) return [];
+
+  // Auto-detect sentiment_score scale (0-1 vs 0-100)
+  const rawVals = calls.map(c => Number(c.sentiment_score ?? 0)).filter(v => v > 0);
+  const avgRaw  = rawVals.length ? rawVals.reduce((s, v) => s + v, 0) / rawVals.length : 50;
+  const scale   = avgRaw <= 1 ? 100 : 1;
+
+  const buckets = {};
+  for (const call of calls) {
+    const dt   = new Date(call.created_at);
+    const day  = DAY_NAMES[dt.getDay()];
+    const slot = HOURS_ORDER[Math.floor(dt.getHours() / 2)];
+    const key  = `${day}|${slot}`;
+    if (!buckets[key]) buckets[key] = { scores: [], sentiments: [] };
+    const score = Number(call.sentiment_score ?? 0) * scale;
+    buckets[key].scores.push(score > 0 ? score : 50);
+    if (call.sentiment) buckets[key].sentiments.push(call.sentiment.toLowerCase());
+  }
+
+  return Object.entries(buckets).map(([key, { scores, sentiments }]) => {
+    const [day, hour] = key.split('|');
+    const avgScore    = Math.round(scores.reduce((s, v) => s + v, 0) / scores.length);
+    const counts   = {};
+    for (const s of sentiments) counts[s] = (counts[s] ?? 0) + 1;
+    const emotion  = sentiments.length
+      ? (() => {
+          const dom = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+          return dom.charAt(0).toUpperCase() + dom.slice(1);
+        })()
+      : scoreToEmotion(avgScore);
+    return { day, hour, sentiment: avgScore, interactions: scores.length, emotion, ghost: false };
+  });
+};
+
+// ── Pad real data with ghost points so ALL hour slots appear on the X-axis ────
+// IMPORTANT: iterate HOURS_ORDER first so Recharts registers categories in order.
+const padWithGhosts = (realPoints) => {
+  // Build a lookup of existing real points
+  const realMap = {};
+  for (const p of realPoints) realMap[`${p.day}|${p.hour}`] = p;
+
+  // Only pad days that actually have data (don't create rows for empty days)
+  const activeDays = [...new Set(realPoints.map(p => p.day))];
+
+  const result = [];
+  // Iterate hours in order first → guarantees X-axis is 00:00 → 02:00 → … → 22:00
+  for (const hour of HOURS_ORDER) {
+    for (const day of activeDays) {
+      const key = `${day}|${hour}`;
+      result.push(
+        realMap[key] ?? { day, hour, sentiment: 0, interactions: 0, emotion: '', ghost: true }
       );
     }
-    return null;
-  };
+  }
+  return result;
+};
+
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const CustomTooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) return null;
+  const d     = payload[0]?.payload;
+  const color = EMOTION_COLOR[d?.emotion] ?? '#64748b';
+  return (
+    <div className="bg-popover border border-border rounded-lg p-3 shadow-lg min-w-[160px]">
+      <p className="text-sm font-semibold text-foreground mb-2">{d?.day} · {d?.hour}</p>
+      <div className="space-y-1 text-xs">
+        <p className="text-muted-foreground">
+          Emotion: <span className="font-medium" style={{ color }}>{d?.emotion}</span>
+        </p>
+        <p className="text-muted-foreground">
+          Avg Score: <span className="text-foreground font-medium">{d?.sentiment}%</span>
+        </p>
+        <p className="text-muted-foreground">
+          Calls: <span className="text-foreground font-medium">{d?.interactions}</span>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+const EmptyState = ({ label }) => (
+  <div className="w-full h-96 flex flex-col items-center justify-center text-center gap-3">
+    <div className="w-14 h-14 rounded-full bg-muted/50 flex items-center justify-center">
+      <Icon name="CalendarOff" size={26} className="text-muted-foreground" />
+    </div>
+    <p className="text-sm font-medium text-foreground">No calls found for {label}</p>
+    <p className="text-xs text-muted-foreground">Try selecting a different week</p>
+  </div>
+);
+
+// ── Main component ────────────────────────────────────────────────────────────
+const SentimentHeatmap = () => {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [chartData,  setChartData]  = useState([]);
+  const [fetching,   setFetching]   = useState(false);
+  const [fetchErr,   setFetchErr]   = useState(null);
+  const [totalCalls, setTotalCalls] = useState(0);
+
+  const currentRange = getWeekRange(weekOffset);
+
+  const loadWeek = useCallback(async (offset) => {
+    setFetching(true);
+    setFetchErr(null);
+    setChartData([]);
+
+    try {
+      const { start, end } = getWeekRange(offset);
+
+      // Query 1: try with status = completed for the selected week
+      const { data: completed, error: e1 } = await supabase
+        .from('call_recordings')
+        .select('created_at, sentiment, sentiment_score')
+        .eq('status', 'completed')
+        .gte('created_at', start.toISOString())
+        .lte('created_at', end.toISOString())
+        .order('created_at', { ascending: true });
+
+      if (e1) throw e1;
+
+      let calls = completed ?? [];
+
+      // Query 2: if no completed calls, include all statuses for that week
+      if (calls.length === 0) {
+        const { data: allStatus, error: e2 } = await supabase
+          .from('call_recordings')
+          .select('created_at, sentiment, sentiment_score')
+          .gte('created_at', start.toISOString())
+          .lte('created_at', end.toISOString())
+          .order('created_at', { ascending: true });
+
+        if (e2) throw e2;
+        calls = allStatus ?? [];
+      }
+
+      setTotalCalls(calls.length);
+      setChartData(padWithGhosts(aggregateCalls(calls)));
+    } catch (err) {
+      setFetchErr(err.message ?? 'Failed to load');
+      setChartData([]);
+    } finally {
+      setFetching(false);
+    }
+  }, []);
+
+  useEffect(() => { loadWeek(weekOffset); }, [weekOffset, loadWeek]);
+
+  const weekLabel = formatWeekLabel(weekOffset, currentRange);
 
   return (
     <div className="bg-card rounded-lg p-8 border border-border">
-      <div className="flex items-center justify-between mb-6">
+
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
         <div>
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <Icon name="Activity" size={20} />
@@ -92,70 +209,136 @@ const SentimentHeatmap = () => {
             Customer emotion patterns across time periods and interaction types
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSelectedPeriod('week')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-              selectedPeriod === 'week' ?'bg-primary text-primary-foreground' :'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            Week
-          </button>
-          <button
-            onClick={() => setSelectedPeriod('month')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-              selectedPeriod === 'month' ?'bg-primary text-primary-foreground' :'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            Month
-          </button>
+
+        <div className="flex items-center gap-3">
+          {/* Status badge */}
+          {fetching ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground animate-pulse">
+              <Icon name="Loader2" size={13} className="animate-spin" />
+              Loading…
+            </span>
+          ) : fetchErr ? (
+            <span className="text-xs text-rose-400 flex items-center gap-1">
+              <Icon name="AlertTriangle" size={13} />
+              {fetchErr}
+            </span>
+          ) : (
+            <span className={`flex items-center gap-1.5 text-xs ${chartData.length > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${chartData.length > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              {chartData.length > 0
+                ? `Live · ${totalCalls} call${totalCalls !== 1 ? 's' : ''}`
+                : 'No data'}
+            </span>
+          )}
+
+          {/* Week navigation arrows */}
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+            <button
+              onClick={() => setWeekOffset(w => w + 1)}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-card transition-all"
+              title="Previous week"
+            >
+              <Icon name="ChevronLeft" size={16} />
+            </button>
+            <span className="px-3 py-1 text-xs font-medium text-foreground min-w-[120px] text-center">
+              {weekLabel}
+            </span>
+            <button
+              onClick={() => setWeekOffset(w => Math.max(0, w - 1))}
+              disabled={weekOffset === 0}
+              className={`p-1.5 rounded-md transition-all ${
+                weekOffset > 0
+                  ? 'text-muted-foreground hover:text-foreground hover:bg-card'
+                  : 'text-muted-foreground/25 cursor-not-allowed'
+              }`}
+              title="Next week"
+            >
+              <Icon name="ChevronRight" size={16} />
+            </button>
+          </div>
         </div>
       </div>
-      <div className="w-full h-96">
-        <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis 
-              type="category" 
-              dataKey="hour" 
-              name="Time"
-              tick={{ fill: 'var(--color-muted-foreground)', fontSize: 12 }}
-              stroke="var(--color-border)"
-            />
-            <YAxis 
-              type="category" 
-              dataKey="day" 
-              name="Day"
-              tick={{ fill: 'var(--color-muted-foreground)', fontSize: 12 }}
-              stroke="var(--color-border)"
-            />
-            <ZAxis type="number" dataKey="interactions" range={[50, 400]} />
-            <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-            <Scatter data={heatmapData} shape="circle">
-              {heatmapData?.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={getEmotionColor(entry?.sentiment)} />
-              ))}
-            </Scatter>
-          </ScatterChart>
-        </ResponsiveContainer>
+
+      {/* ── Quick-select pills ── */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        {[
+          { offset: 0, label: 'This Week'    },
+          { offset: 1, label: 'Last Week'    },
+          { offset: 2, label: '2 Weeks Ago'  },
+          { offset: 3, label: '3 Weeks Ago'  },
+          { offset: 4, label: '4 Weeks Ago'  },
+        ].map(({ offset, label }) => (
+          <button
+            key={offset}
+            onClick={() => setWeekOffset(offset)}
+            className={`px-3 py-1 text-xs font-medium rounded-full border transition-all ${
+              weekOffset === offset
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'bg-transparent text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-      <div className="flex items-center justify-center gap-6 mt-6 pt-4 border-t border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-          <span className="text-xs text-muted-foreground">Satisfied (≥70%)</span>
+
+      {/* ── Chart or empty state ── */}
+      {chartData.length === 0 && !fetching ? (
+        <EmptyState label={weekLabel} />
+      ) : (
+        <div className="w-full h-96">
+          <ResponsiveContainer width="100%" height="100%">
+            <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+              <XAxis
+                type="category"
+                dataKey="hour"
+                name="Time"
+                allowDuplicatedCategory={false}
+                categories={HOURS_ORDER}
+                tick={{ fill: 'var(--color-muted-foreground)', fontSize: 12 }}
+                stroke="var(--color-border)"
+              />
+              <YAxis
+                type="category"
+                dataKey="day"
+                name="Day"
+                allowDuplicatedCategory={false}
+                categories={DAYS_ORDER}
+                tick={{ fill: 'var(--color-muted-foreground)', fontSize: 12 }}
+                stroke="var(--color-border)"
+                width={36}
+              />
+              <ZAxis type="number" dataKey="interactions" range={[0, 500]} name="Calls" />
+              <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+              <Scatter data={chartData} shape="circle">
+                {chartData.map((entry, idx) => (
+                  <Cell
+                    key={`cell-${idx}`}
+                    fill={entry.ghost ? 'transparent' : (EMOTION_COLOR[entry.emotion] ?? '#64748b')}
+                    opacity={entry.ghost ? 0 : 0.85}
+                  />
+                ))}
+              </Scatter>
+            </ScatterChart>
+          </ResponsiveContainer>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-slate-500"></div>
-          <span className="text-xs text-muted-foreground">Neutral (50-69%)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-          <span className="text-xs text-muted-foreground">Frustrated (30-49%)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-red-600"></div>
-          <span className="text-xs text-muted-foreground">Angry (&lt;30%)</span>
-        </div>
+      )}
+
+      {/* ── Legend ── */}
+      <div className="flex flex-wrap items-center justify-center gap-6 mt-6 pt-4 border-t border-border">
+        {Object.entries(EMOTION_COLOR).map(([label, color]) => (
+          <div key={label} className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+            <span className="text-xs text-muted-foreground">
+              {label}
+              {label === 'Satisfied'  && ' (≥70%)'}
+              {label === 'Neutral'    && ' (50-69%)'}
+              {label === 'Frustrated' && ' (30-49%)'}
+              {label === 'Angry'      && ' (<30%)'}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

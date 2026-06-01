@@ -42,16 +42,23 @@ function mapTopicToChartPoint(row, index, total) {
   const topicName  = row.topics?.name ?? `Topic ${index + 1}`;
   const category   = (row.topics?.category ?? 'service').toLowerCase();
 
-  // X: use category base + small jitter so bubbles in same category don't stack
+  // X: spread across full 0-100 using index to avoid clustering
   const baseX  = CATEGORY_X[category] ?? 50;
-  const jitter = ((index % 3) - 1) * 6; // -6, 0, +6
-  const x      = Math.min(95, Math.max(5, baseX + jitter));
+  const spread = total > 1 ? (index / (total - 1)) * 40 - 20 : 0; // −20 to +20
+  const x      = Math.min(92, Math.max(8, baseX + spread));
 
-  // Y: avg_sentiment_score is already 0-100 from DB; fall back to score by rank
+  // Y: avg_sentiment_score — auto-scale from 0-1 to 0-100 if needed
   const rawScore = row.avg_sentiment_score ?? row.avg_score;
-  const y = rawScore != null
-    ? Math.min(95, Math.max(5, Math.round(Number(rawScore))))
-    : Math.round(90 - (index / Math.max(total - 1, 1)) * 80); // rank-based fallback
+  let y = 50; // safe default
+  if (rawScore != null) {
+    const n = Number(rawScore);
+    // If value is ≤ 1 assume 0-1 scale
+    const scaled = n <= 1 ? n * 100 : n;
+    y = Math.min(92, Math.max(8, Math.round(scaled)));
+  } else {
+    // Rank-based fallback spreads bubbles across Y
+    y = Math.round(90 - (index / Math.max(total - 1, 1)) * 80);
+  }
 
   return {
     topic:       topicName,
