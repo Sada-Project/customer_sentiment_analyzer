@@ -5,36 +5,20 @@ import TopicBubbleChart from './components/TopicBubbleChart';
 import KeywordWordCloud from './components/KeywordWordCloud';
 import TrendAlertWidget from './components/TrendAlertWidget';
 import Icon from '../../components/AppIcon';
-import {
-  fetchSentimentHeatmap,
-  fetchTopicFrequency,
-  fetchKeywords,
-  fetchTrendAlerts,
-} from '../../services/customerInsightsService';
+import { fetchSentimentHeatmap } from '../../services/customerInsightsService';
 
 const CustomerInsights = () => {
-  const [lastUpdate, setLastUpdate]         = useState(new Date());
-  const [heatmap, setHeatmap]               = useState([]);
-  const [topics, setTopics]                 = useState([]);
-  const [keywords, setKeywords]             = useState([]);
-  const [trendAlerts, setTrendAlerts]       = useState([]);
-  const [loading, setLoading]               = useState(true);
-  const [error, setError]                   = useState(null);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [heatmap,    setHeatmap]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const [heat, tops, kws, trends] = await Promise.all([
-        fetchSentimentHeatmap(),
-        fetchTopicFrequency(),
-        fetchKeywords(),
-        fetchTrendAlerts(),
-      ]);
+      const heat = await fetchSentimentHeatmap();
       setHeatmap(heat);
-      setTopics(tops);
-      setKeywords(kws);
-      setTrendAlerts(trends);
       setLastUpdate(new Date());
     } catch (err) {
       setError(err.message);
@@ -50,7 +34,6 @@ const CustomerInsights = () => {
     const interval = setInterval(loadData, 300000);
     return () => clearInterval(interval);
   }, [loadData]);
-
 
 
   return (
@@ -84,10 +67,10 @@ const CustomerInsights = () => {
               </div>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-              <div className="lg:col-span-2"><TopicBubbleChart topics={topics} loading={loading} error={error} /></div>
-              <div className="lg:col-span-1"><TrendAlertWidget alerts={trendAlerts} /></div>
+              <div className="lg:col-span-2"><TopicBubbleChart /></div>
+              <div className="lg:col-span-1"><TrendAlertWidget /></div>
             </div>
-            <div className="mb-6"><KeywordWordCloud keywords={keywords} loading={loading} error={error} /></div>
+            <div className="mb-6"><KeywordWordCloud /></div>
           </div>
 
           <div className="mb-6">
