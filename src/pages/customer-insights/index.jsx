@@ -59,7 +59,6 @@ const CustomerInsights = () => {
   }, [loadData]);
 
   const handleFilterChange = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
-  const handleApplyFilters  = () => loadData();
   const handleResetFilters  = () => setFilters({ segment: 'all', interactionType: 'all', sentimentThreshold: 'all', period: '30d' });
 
 
@@ -84,7 +83,7 @@ const CustomerInsights = () => {
             </div>
           </div>
 
-          <FilterPanel filters={filters} onFilterChange={handleFilterChange} onApplyFilters={handleApplyFilters} onResetFilters={handleResetFilters} />
+          <FilterPanel filters={filters} onFilterChange={handleFilterChange} onResetFilters={handleResetFilters} />
 
 
           <div className="mb-6">
@@ -96,10 +95,10 @@ const CustomerInsights = () => {
               </div>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-              <div className="lg:col-span-2"><TopicBubbleChart topics={topics} /></div>
+              <div className="lg:col-span-2"><TopicBubbleChart topics={topics} loading={loading} error={error} /></div>
               <div className="lg:col-span-1"><TrendAlertWidget alerts={trendAlerts} /></div>
             </div>
-            <div className="mb-6"><KeywordWordCloud keywords={keywords} /></div>
+            <div className="mb-6"><KeywordWordCloud keywords={keywords} loading={loading} error={error} /></div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

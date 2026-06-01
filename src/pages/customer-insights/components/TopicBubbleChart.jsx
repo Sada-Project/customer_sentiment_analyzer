@@ -2,84 +2,89 @@ import React, { useState } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import Icon from '../../../components/AppIcon';
 
-const TopicBubbleChart = () => {
+// ── Sentiment → color mapping ──────────────────────────────────────────────────
+const SENTIMENT_COLORS = {
+  satisfied:  '#10b981', // Green
+  neutral:    '#64748b', // Gray/Blue
+  frustrated: '#f59e0b', // Yellow/Amber
+  angry:      '#ef4444', // Red
+};
+
+// ── Category index map: gives deterministic X spread per category ─────────────
+const CATEGORY_X = {
+  billing:   20,
+  technical: 40,
+  service:   55,
+  product:   65,
+  account:   75,
+  logistics: 85,
+};
+
+/**
+ * Maps a raw row from fetchTopicFrequency (topic_frequency JOIN topics)
+ * into the shape required by the ScatterChart bubble.
+ *
+ * Raw shape (from Supabase):
+ *   { call_count, avg_sentiment_score, dominant_sentiment,
+ *     topics: { name, color, icon_name, category } }
+ *
+ * Output shape:
+ *   { topic, volume, sentiment, color, description, x (0-100), y (0-100) }
+ *
+ * X  = category-based horizontal spread (0-100), jittered by call_count rank
+ * Y  = avg_sentiment_score clamped to 0-100
+ *       (high sentiment score = high Y = more positive)
+ * Size (ZAxis) = call_count (volume)
+ */
+function mapTopicToChartPoint(row, index, total) {
+  const sentiment  = (row.dominant_sentiment ?? 'neutral').toLowerCase();
+  const color      = SENTIMENT_COLORS[sentiment] ?? SENTIMENT_COLORS.neutral;
+  const topicName  = row.topics?.name ?? `Topic ${index + 1}`;
+  const category   = (row.topics?.category ?? 'service').toLowerCase();
+
+  // X: use category base + small jitter so bubbles in same category don't stack
+  const baseX  = CATEGORY_X[category] ?? 50;
+  const jitter = ((index % 3) - 1) * 6; // -6, 0, +6
+  const x      = Math.min(95, Math.max(5, baseX + jitter));
+
+  // Y: avg_sentiment_score is already 0-100 from DB; fall back to score by rank
+  const rawScore = row.avg_sentiment_score ?? row.avg_score;
+  const y = rawScore != null
+    ? Math.min(95, Math.max(5, Math.round(Number(rawScore))))
+    : Math.round(90 - (index / Math.max(total - 1, 1)) * 80); // rank-based fallback
+
+  return {
+    topic:       topicName,
+    volume:      row.call_count ?? 1,
+    sentiment,
+    color,
+    description: `${topicName} — ${row.call_count ?? 0} calls (${category})`,
+    x,
+    y,
+  };
+}
+
+// ── Static fallback data (shown when backend returns nothing) ──────────────────
+const FALLBACK_DATA = [
+  { topic: 'Billing Disputes',  volume: 245, sentiment: 'angry',      x: 30, y: 75, color: '#ef4444', description: 'Customers disputing charges and billing errors' },
+  { topic: 'Technical Bugs',    volume: 189, sentiment: 'frustrated',  x: 60, y: 55, color: '#f59e0b', description: 'Reports of app crashes and feature malfunctions' },
+  { topic: 'Refund Requests',   volume: 156, sentiment: 'frustrated',  x: 45, y: 65, color: '#f59e0b', description: 'Customers requesting refunds for various reasons' },
+  { topic: 'Account Access',    volume: 134, sentiment: 'frustrated',  x: 70, y: 45, color: '#f59e0b', description: 'Login issues and password reset requests' },
+  { topic: 'Feature Requests',  volume:  98, sentiment: 'neutral',     x: 50, y: 30, color: '#64748b', description: 'Suggestions for new features and improvements' },
+  { topic: 'Product Praise',    volume:  87, sentiment: 'satisfied',   x: 80, y: 20, color: '#10b981', description: 'Positive feedback about product quality' },
+  { topic: 'Shipping Delays',   volume:  76, sentiment: 'frustrated',  x: 35, y: 60, color: '#f59e0b', description: 'Complaints about late deliveries' },
+  { topic: 'Customer Service',  volume:  65, sentiment: 'satisfied',   x: 85, y: 15, color: '#10b981', description: 'Appreciation for support team assistance' },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TopicBubbleChart = ({ topics = [], loading = false, error = null }) => {
   const [selectedTopic, setSelectedTopic] = useState(null);
 
-  // Mock data for topic modeling - visualizes call topics by volume and sentiment
-  const topicData = [
-    { 
-      topic: 'Billing Disputes', 
-      volume: 245, 
-      sentiment: 'angry', 
-      x: 30, 
-      y: 75,
-      color: '#ef4444',
-      description: 'Customers disputing charges and billing errors'
-    },
-    { 
-      topic: 'Technical Bugs', 
-      volume: 189, 
-      sentiment: 'frustrated', 
-      x: 60, 
-      y: 55,
-      color: '#f59e0b',
-      description: 'Reports of app crashes and feature malfunctions'
-    },
-    { 
-      topic: 'Refund Requests', 
-      volume: 156, 
-      sentiment: 'frustrated', 
-      x: 45, 
-      y: 65,
-      color: '#f59e0b',
-      description: 'Customers requesting refunds for various reasons'
-    },
-    { 
-      topic: 'Account Access', 
-      volume: 134, 
-      sentiment: 'frustrated', 
-      x: 70, 
-      y: 45,
-      color: '#f59e0b',
-      description: 'Login issues and password reset requests'
-    },
-    { 
-      topic: 'Feature Requests', 
-      volume: 98, 
-      sentiment: 'neutral', 
-      x: 50, 
-      y: 30,
-      color: '#64748b',
-      description: 'Suggestions for new features and improvements'
-    },
-    { 
-      topic: 'Product Praise', 
-      volume: 87, 
-      sentiment: 'satisfied', 
-      x: 80, 
-      y: 20,
-      color: '#10b981',
-      description: 'Positive feedback about product quality'
-    },
-    { 
-      topic: 'Shipping Delays', 
-      volume: 76, 
-      sentiment: 'frustrated', 
-      x: 35, 
-      y: 60,
-      color: '#f59e0b',
-      description: 'Complaints about late deliveries'
-    },
-    { 
-      topic: 'Customer Service', 
-      volume: 65, 
-      sentiment: 'satisfied', 
-      x: 85, 
-      y: 15,
-      color: '#10b981',
-      description: 'Appreciation for support team assistance'
-    }
-  ];
+  // Map backend rows → chart points; fall back to static data when empty
+  const topicData = topics.length > 0
+    ? topics.map((row, i) => mapTopicToChartPoint(row, i, topics.length))
+    : FALLBACK_DATA;
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload?.length) {
@@ -114,10 +119,33 @@ const TopicBubbleChart = () => {
           <p className="text-slate-400 text-sm">Most frequent call topics by volume and sentiment</p>
         </div>
         <div className="flex items-center gap-2">
+          {loading && (
+            <span className="flex items-center gap-1.5 text-xs text-slate-400 animate-pulse">
+              <Icon name="Loader2" size={14} className="animate-spin" />
+              Loading…
+            </span>
+          )}
+          {!loading && topics.length > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Live Data
+            </span>
+          )}
+          {!loading && topics.length === 0 && (
+            <span className="text-xs text-slate-500">Demo Data</span>
+          )}
           <Icon name="Brain" size={20} className="text-blue-400" />
           <span className="text-xs text-slate-400">AI-Powered</span>
         </div>
       </div>
+
+      {/* Error banner — non-blocking, chart still renders with fallback */}
+      {error && (
+        <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+          <Icon name="AlertTriangle" size={14} className="text-rose-400 flex-shrink-0" />
+          <p className="text-xs text-rose-400">{error} — showing demo data instead.</p>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2">
         <div className="flex items-center gap-2 text-xs">

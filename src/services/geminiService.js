@@ -367,16 +367,75 @@ export async function analyzeCallFull(params, onProgress = () => {}) {
 
   if (callId) {
     onProgress('Saving to database…', 90);
+
+    // ── 1. Save core call data ─────────────────────────────────────────────────
     await supabase.from('call_recordings').update({
-      sentiment:            sentimentResult.sentiment,
-      sentiment_score:      sentimentResult.sentiment_score,
-      sentiment_confidence: sentimentResult.sentiment_confidence,
-      ai_summary:           summaryResult.summary,
-      transcript_text:      transcript,          // ← persist full transcript
-      status:               'completed',
-      processed_at:         new Date().toISOString(),
+      sentiment:              sentimentResult.sentiment,
+      sentiment_score:        sentimentResult.sentiment_score,
+      sentiment_confidence:   sentimentResult.sentiment_confidence,
+      ai_summary:             summaryResult.summary,
+      transcript_text:        transcript,
+      status:                 'completed',
+      processed_at:           new Date().toISOString(),
       processing_duration_ms: Date.now() - (params._startedAt ?? Date.now()),
     }).eq('id', callId);
+
+    // ── 2. Save topics → topics master table (upsert by name) ─────────────────
+    // topics has: id (uuid), name (text UNIQUE), category (text),
+    //             color (text), icon_name (text), description (text)
+    // We only upsert name + category — color/icon keep existing values.
+    if (topicsResult?.length > 0) {
+      try {
+        for (const topic of topicsResult) {
+          if (!topic?.name?.trim()) continue;
+          const { error: upsertErr } = await supabase
+            .from('topics')
+            .upsert(
+              { name: topic.name.trim(), category: topic.category ?? 'service' },
+              { onConflict: 'name', ignoreDuplicates: false }
+            );
+          if (upsertErr) console.warn('[Topics]', upsertErr.message);
+        }
+      } catch (e) {
+        console.warn('[Gemini] Topic save error (non-fatal):', e.message);
+      }
+    }
+
+    // ── 3. Save keywords → keywords table (upsert by word) ─────────────────────
+    // keywords has: id (uuid), word (text UNIQUE), sentiment_bias (sentiment_type),
+    //               frequency (int), weight (decimal), created_at, updated_at
+    if (keywordsResult?.length > 0) {
+      try {
+        for (const kw of keywordsResult) {
+          if (!kw?.word?.trim()) continue;
+          const wordLower = kw.word.toLowerCase().trim();
+
+          const { data: existing } = await supabase
+            .from('keywords')
+            .select('id, frequency')
+            .eq('word', wordLower)
+            .maybeSingle();
+
+          if (existing) {
+            await supabase.from('keywords').update({
+              frequency:      (existing.frequency ?? 0) + (kw.frequency ?? 1),
+              weight:         kw.weight ?? 1,
+              sentiment_bias: kw.sentiment_bias ?? 'neutral',
+            }).eq('id', existing.id);
+          } else {
+            const { error: insErr } = await supabase.from('keywords').insert({
+              word:           wordLower,
+              frequency:      kw.frequency ?? 1,
+              weight:         kw.weight ?? 1,
+              sentiment_bias: kw.sentiment_bias ?? 'neutral',
+            });
+            if (insErr) console.warn('[Keywords insert]', insErr.message);
+          }
+        }
+      } catch (e) {
+        console.warn('[Gemini] Keyword save error (non-fatal):', e.message);
+      }
+    }
   }
 
   onProgress('Done!', 100);

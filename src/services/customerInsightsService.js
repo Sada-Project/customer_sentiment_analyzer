@@ -90,9 +90,24 @@ export async function fetchSentimentAlerts(limit = 8) {
 }
 
 // ─── Topic Bubble Chart ───────────────────────────────────────────────────────
-export async function fetchTopicFrequency(date) {
-  const targetDate = date ?? new Date().toISOString().split('T')[0];
+// Strategy: read from call_recordings with their sentiment, then count per topic
+// using call_topics junction if available. Fallback: return topics list with
+// frequency derived from call_recordings sentiment aggregate.
+//
+// Live DB confirmed tables:
+//   topics: id, name, category, color, icon_name, description
+//   call_recordings: id, sentiment, sentiment_score, status
+//
+export async function fetchTopicFrequency() {
+  // Step 1: Get all completed call_recordings with sentiment
+  const { data: calls, error: callErr } = await supabase
+    .from('call_recordings')
+    .select('id, sentiment, sentiment_score, ai_summary, transcript_text')
+    .eq('status', 'completed')
+    .order('processed_at', { ascending: false })
+    .limit(200);
 
+<<<<<<< Updated upstream
   let { data, error } = await supabase
     .from('topic_frequency')
     .select('*, topics(name, color, icon_name, category)')
@@ -115,9 +130,79 @@ export async function fetchTopicFrequency(date) {
   }
 
   return data;
+=======
+  if (callErr) throw callErr;
+
+  // Step 2: Get all topics (the master table, not junction)
+  const { data: topicRows, error: topicErr } = await supabase
+    .from('topics')
+    .select('id, name, category, color, icon_name')
+    .order('name');
+
+  if (topicErr) throw topicErr;
+  if (!topicRows?.length) return [];
+
+  const completedCalls = calls ?? [];
+  const totalCalls = completedCalls.length;
+
+  if (totalCalls === 0) return [];
+
+  // Step 3: For each topic, count how many call summaries/transcripts mention it
+  // and derive a sentiment score from those matching calls.
+  // This gives us a real frequency + sentiment per topic even without call_topics.
+  return topicRows.map((topic) => {
+    const keyword = topic.name.toLowerCase();
+
+    // Find calls whose ai_summary or transcript mentions this topic name
+    const matchingCalls = completedCalls.filter(call => {
+      const haystack = [
+        call.ai_summary ?? '',
+        call.transcript_text ?? '',
+      ].join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    });
+
+    const count = matchingCalls.length;
+    if (count === 0) {
+      // Still include the topic but with minimal count so it appears in the chart
+      const globalAvg = completedCalls.length > 0
+        ? Math.round(completedCalls.reduce((s, c) => s + Number(c.sentiment_score ?? 50), 0) / completedCalls.length)
+        : 50;
+      return {
+        topic_id:            topic.id,
+        call_count:          1, // show even if no explicit match
+        avg_sentiment_score: globalAvg,
+        dominant_sentiment:  completedCalls[0]?.sentiment ?? 'neutral',
+        topics:              topic,
+      };
+    }
+
+    const avgScore = Math.round(
+      matchingCalls.reduce((s, c) => s + Number(c.sentiment_score ?? 50), 0) / count
+    );
+
+    // Dominant sentiment = most common sentiment among matching calls
+    const sentimentCounts = {};
+    for (const c of matchingCalls) {
+      const s = c.sentiment ?? 'neutral';
+      sentimentCounts[s] = (sentimentCounts[s] ?? 0) + 1;
+    }
+    const dominant = Object.entries(sentimentCounts)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'neutral';
+
+    return {
+      topic_id:            topic.id,
+      call_count:          count,
+      avg_sentiment_score: avgScore,
+      dominant_sentiment:  dominant,
+      topics:              topic,
+    };
+  }).sort((a, b) => b.call_count - a.call_count);
+>>>>>>> Stashed changes
 }
 
 // ─── Keyword Word Cloud ───────────────────────────────────────────────────────
+// Live DB confirmed columns: word, sentiment_bias, frequency, weight
 export async function fetchKeywords(limit = 50) {
   const { data, error } = await supabase
     .from('keywords')
@@ -125,8 +210,20 @@ export async function fetchKeywords(limit = 50) {
     .order('frequency', { ascending: false })
     .limit(limit);
 
+<<<<<<< Updated upstream
   if (error) throw new Error(`Keywords fetch failed: ${error.message}`);
   return data ?? [];
+=======
+  if (error) throw error;
+
+  // Return shape expected by KeywordWordCloud mapper: { word, frequency, weight, sentiment_bias }
+  return (data ?? []).map(row => ({
+    word:           row.word,
+    frequency:      row.frequency ?? 1,
+    weight:         row.weight ?? 1,
+    sentiment_bias: row.sentiment_bias ?? 'neutral',
+  }));
+>>>>>>> Stashed changes
 }
 
 // ─── Trend Alert Widget ───────────────────────────────────────────────────────
