@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import SadaLogo from '../../components/SadaLogo';
 
 // ── Animated counter ───────────────────────────────────────────────────────────
 function useCounter(target, duration = 2000, start = false) {
@@ -141,14 +142,8 @@ const LandingPage = () => {
         transition: 'all 0.3s',
       }}>
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 10,
-            background: `linear-gradient(135deg, ${C.primary}, ${C.secondary})`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '1rem', boxShadow: `0 0 16px ${C.primary}55`,
-          }}>🎯</div>
-          <span style={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>SentimentAI</span>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <SadaLogo size={36} variant="full" />
         </div>
 
         {/* Nav actions */}
@@ -228,7 +223,7 @@ const LandingPage = () => {
             {/* Window chrome bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1rem', background: C.card2, borderBottom: `1px solid ${C.border}` }}>
               {['#EF4444', '#F59E0B', '#10B981'].map((c, i) => <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />)}
-              <span style={{ fontSize: '0.68rem', color: C.muted, marginLeft: '0.4rem' }}>SentimentAI — Sentiment Overview</span>
+              <span style={{ fontSize: '0.68rem', color: C.muted, marginLeft: '0.4rem' }}>SADA — Sentiment Overview</span>
             </div>
 
             {/* KPI cards row */}
@@ -377,7 +372,7 @@ const LandingPage = () => {
       {/* ── Footer ── */}
       <footer style={{ borderTop: `1px solid ${C.border}`, padding: '1.8rem 2rem', textAlign: 'center' }}>
         <div style={{ marginBottom: '0.4rem' }}>
-          <span style={{ fontWeight: 700, color: C.primary }}>SentimentAI</span>
+          <span style={{ fontWeight: 700, color: C.primary }}>SADA</span>
           {' '}— Customer Sentiment Analyzer Platform
         </div>
         <div style={{ fontSize: '0.8rem', color: C.muted }}>

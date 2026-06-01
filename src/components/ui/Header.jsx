@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Icon from '../AppIcon';
 import ThemeToggle from '../ThemeToggle';
+import SadaLogo from '../SadaLogo';
 
 const Header = () => {
   const location = useLocation();
@@ -75,12 +76,7 @@ const Header = () => {
     <header className="fixed top-0 left-0 right-0 z-40 bg-card border-b border-border">
       <div className="flex items-center h-16 px-6">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 bg-primary/10 rounded-lg transition-all duration-150 ease-out">
-            <Icon name="Activity" size={24} color="var(--color-primary)" />
-          </div>
-          <span className="text-lg font-semibold text-foreground">
-            Customer Sentiment Analyzer
-          </span>
+          <SadaLogo size={34} variant="full" />
         </div>
 
         <nav className="hidden md:flex items-center gap-2 ml-auto">

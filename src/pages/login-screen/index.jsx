@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Icon from '../../components/AppIcon';
 import ThemeToggle from '../../components/ThemeToggle';
+import SadaLogo from '../../components/SadaLogo';
 
 const LoginScreen = () => {
   const navigate = useNavigate();
@@ -43,8 +44,8 @@ const LoginScreen = () => {
 
           {/* Logo & Title */}
           <div className="flex flex-col items-center mb-8">
-            <div className="flex items-center justify-center w-16 h-16 bg-primary/10 rounded-lg mb-4">
-              <Icon name="Activity" size={32} color="var(--color-primary)" />
+            <div className="mb-4">
+              <SadaLogo size={56} variant="icon" />
             </div>
             <h1 className="text-2xl font-bold text-foreground">Sign In</h1>
             <p className="text-sm text-muted-foreground mt-2">
