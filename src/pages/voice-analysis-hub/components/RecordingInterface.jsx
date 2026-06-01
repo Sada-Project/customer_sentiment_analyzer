@@ -85,7 +85,7 @@ const RecordingInterface = ({ onRecordingComplete }) => {
 
     } catch (err) {
       console.error('Microphone access denied:', err);
-      alert('لم يتمكن التطبيق من الوصول إلى الميكروفون. يرجى السماح بالوصول في إعدادات المتصفح.');
+      alert('Microphone access denied. Please allow microphone access in your browser settings.');
     }
   };
 
@@ -210,7 +210,7 @@ const RecordingInterface = ({ onRecordingComplete }) => {
                 </p>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground">هل تريد تحليل هذا التسجيل؟</p>
+            <p className="text-sm text-muted-foreground">Would you like to analyze this recording?</p>
             <div className="flex items-center gap-3">
               <Button
                 variant="outline" size="sm"
@@ -224,7 +224,7 @@ const RecordingInterface = ({ onRecordingComplete }) => {
                 iconName="Sparkles" iconPosition="left"
                 onClick={confirmRecording}
               >
-                تحليل التسجيل
+                Analyze Recording
               </Button>
             </div>
           </div>
@@ -267,7 +267,7 @@ const RecordingInterface = ({ onRecordingComplete }) => {
                   iconName="X" iconPosition="left"
                   onClick={cancelRecording}
                 >
-                  إلغاء
+                  Cancel
                 </Button>
                 {/* Pause / Resume */}
                 <Button

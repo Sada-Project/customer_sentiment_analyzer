@@ -73,7 +73,7 @@ const Toast = ({ message, type, onClose }) => {
       <button
         onClick={onClose}
         className="mt-0.5 opacity-60 hover:opacity-100 transition-opacity text-xl leading-none"
-        aria-label="إغلاق"
+        aria-label="Close"
       >
         ×
       </button>
@@ -104,13 +104,13 @@ const ConfirmDialog = ({ message, onConfirm, onCancel }) => (
           onClick={onCancel}
           className="px-4 py-2 text-sm rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors"
         >
-          إلغاء
+          Cancel
         </button>
         <button
           onClick={onConfirm}
           className="px-4 py-2 text-sm rounded-md bg-destructive text-white hover:bg-destructive/90 transition-colors"
         >
-          تأكيد
+          Confirm
         </button>
       </div>
     </div>
@@ -170,15 +170,15 @@ const AdminUserManagement = () => {
   // ── Permanently delete user (only available for inactive accounts) ───────────
   const handleDeleteUser = (userId) => {
     setConfirm({
-      message: 'هل أنت متأكد من حذف هذا الحساب نهائياً؟ سيتم إزالته من النظام بشكل كامل ولا يمكن التراجع عن هذا الإجراء.',
+      message: 'Are you sure you want to permanently delete this account? It will be completely removed from the system and this action cannot be undone.',
       onConfirm: async () => {
         setConfirm(null);
         try {
           await deleteUser(userId);
           setUsers(prev => prev.filter(u => u.id !== userId));
-          showToast('تم حذف الحساب نهائياً.', 'success');
+          showToast('Account permanently deleted.', 'success');
         } catch (err) {
-          showToast(`خطأ في الحذف: ${err.message}`, 'error');
+          showToast(`Delete error: ${err.message}`, 'error');
         }
       },
     });
@@ -192,7 +192,7 @@ const AdminUserManagement = () => {
     // Only show confirmation dialog when DISABLING an active account
     if (target.is_active) {
       setConfirm({
-        message: `هل أنت متأكد من تعطيل حساب "${target.full_name || target.email}"؟ لن يتمكن المستخدم من تسجيل الدخول حتى يتم تفعيل حسابه مجدداً.`,
+        message: `Are you sure you want to deactivate "${target.full_name || target.email}"? The user will not be able to sign in until their account is reactivated.`,
         onConfirm: async () => {
           setConfirm(null);
           try {
@@ -200,9 +200,9 @@ const AdminUserManagement = () => {
             setUsers(prev => prev.map(u =>
               u.id === userId ? { ...u, is_active: false } : u
             ));
-            showToast('تم تعطيل الحساب بنجاح.', 'success');
+            showToast('Account deactivated successfully.', 'success');
           } catch (err) {
-            showToast(`خطأ: ${err.message}`, 'error');
+            showToast(`Error: ${err.message}`, 'error');
           }
         },
       });
@@ -214,7 +214,7 @@ const AdminUserManagement = () => {
           setUsers(prev => prev.map(u =>
             u.id === userId ? { ...u, is_active: true } : u
           ));
-          showToast('تم تفعيل الحساب بنجاح.', 'success');
+          showToast('Account activated successfully.', 'success');
         } catch (err) {
           showToast(`خطأ: ${err.message}`, 'error');
         }
@@ -242,7 +242,7 @@ const AdminUserManagement = () => {
                 role_title: userData.role_title, department_code: userData.department_code }
             : u
         ));
-        showToast('تم تحديث بيانات المستخدم.', 'success');
+        showToast('User details updated.', 'success');
       } else {
         // New user — create real account in Supabase Auth
         await inviteUser({
@@ -253,7 +253,7 @@ const AdminUserManagement = () => {
         });
         // Reload list from DB to get the real user record
         await loadUsers();
-        showToast('تم إنشاء حساب المستخدم بنجاح.', 'success');
+        showToast('User account created successfully.', 'success');
       }
     } catch (err) {
       showToast(`خطأ: ${err.message}`, 'error');
@@ -270,11 +270,11 @@ const AdminUserManagement = () => {
     role:       u.role ?? 'agent',
     status:     u.is_active ? 'active' : 'inactive',
     lastActive: u.last_login
-      ? new Date(u.last_login).toLocaleString('ar-SA', {
+      ? new Date(u.last_login).toLocaleString('en-US', {
           year: 'numeric', month: 'short', day: 'numeric',
           hour: '2-digit', minute: '2-digit',
         })
-      : 'لم يسجّل دخولاً بعد',
+      : 'Never signed in',
     avatar:     u.avatar_url
                   || `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(u.email || u.id)}`,
     // Keep raw DB fields for the edit modal

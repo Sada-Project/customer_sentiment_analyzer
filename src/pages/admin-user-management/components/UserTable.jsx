@@ -26,19 +26,19 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
           <thead>
             <tr className="bg-muted/30 border-b border-border">
               <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                المستخدم
+                User
               </th>
               <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                الحالة
+                Status
               </th>
               <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                الدور
+                Role
               </th>
               <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                آخر نشاط
+                Last Active
               </th>
               <th className="px-6 py-3.5 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                الإجراءات
+                Actions
               </th>
             </tr>
           </thead>
@@ -65,7 +65,7 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
                         <p className="text-foreground font-medium text-sm">
                           {user?.name || '—'}
                           {isTempUser(user?.id) && (
-                            <span className="ml-2 text-xs text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">مؤقت</span>
+                            <span className="ml-2 text-xs text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">Temp</span>
                           )}
                         </p>
                         <p className="text-muted-foreground text-xs">{user?.email}</p>
@@ -81,7 +81,7 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
                         : 'bg-slate-500/10 text-slate-400'
                     }`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${user?.status === 'active' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                      {user?.status === 'active' ? 'نشط' : 'معطّل'}
+                      {user?.status === 'active' ? 'Active' : 'Inactive'}
                     </span>
                   </td>
 
@@ -104,7 +104,7 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
                       <button
                         onClick={() => onEdit?.(user)}
                         className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-                        title="تعديل المستخدم"
+                        title="Edit user"
                       >
                         <Icon name="Edit" size={16} />
                       </button>
@@ -114,7 +114,7 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
                         <button
                           onClick={() => onToggleStatus?.(user)}
                           className="p-2 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 rounded-md transition-colors"
-                          title="تعطيل الحساب"
+                          title="Deactivate account"
                         >
                           <Icon name="UserX" size={16} />
                         </button>
@@ -124,14 +124,14 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
                           <button
                             onClick={() => onToggleStatus?.(user)}
                             className="p-2 text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 rounded-md transition-colors"
-                            title="تفعيل الحساب"
+                            title="Activate account"
                           >
                             <Icon name="UserCheck" size={16} />
                           </button>
                           <button
                             onClick={() => onDelete?.(user)}
                             className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                            title="حذف الحساب نهائياً"
+                            title="Delete account permanently"
                           >
                             <Icon name="Trash2" size={16} />
                           </button>
@@ -148,7 +148,7 @@ const UserTable = ({ users, onEdit, onDelete, onToggleStatus }) => {
                     <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
                       <Icon name="Users" size={32} className="text-muted-foreground" />
                     </div>
-                    <p className="text-muted-foreground text-sm">لا يوجد مستخدمون مطابقون</p>
+                    <p className="text-muted-foreground text-sm">No matching users found</p>
                   </div>
                 </td>
               </tr>

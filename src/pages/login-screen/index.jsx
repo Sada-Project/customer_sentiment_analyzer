@@ -24,7 +24,7 @@ const LoginScreen = () => {
       // Navigate to root — RoleBasedRedirect will send user to correct page
       navigate('/');
     } catch (err) {
-      setError(err?.message || 'فشل تسجيل الدخول. يرجى التحقق من بياناتك.');
+      setError(err?.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -46,7 +46,7 @@ const LoginScreen = () => {
             <div className="flex items-center justify-center w-16 h-16 bg-primary/10 rounded-lg mb-4">
               <Icon name="Activity" size={32} color="var(--color-primary)" />
             </div>
-            <h1 className="text-2xl font-bold text-foreground">تسجيل الدخول</h1>
+            <h1 className="text-2xl font-bold text-foreground">Sign In</h1>
             <p className="text-sm text-muted-foreground mt-2">
               Customer Sentiment Analyzer
             </p>
@@ -68,7 +68,7 @@ const LoginScreen = () => {
             {/* Email */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
-                البريد الإلكتروني
+              Email Address
               </label>
               <div className="relative">
                 <input
@@ -88,7 +88,7 @@ const LoginScreen = () => {
             {/* Password */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-foreground mb-2">
-                كلمة المرور
+              Password
               </label>
               <div className="relative">
                 <input
@@ -123,10 +123,10 @@ const LoginScreen = () => {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <Icon name="Loader2" size={20} className="animate-spin" />
-                  جارٍ تسجيل الدخول…
+                  Signing in…
                 </span>
               ) : (
-                'تسجيل الدخول'
+                'Sign In'
               )}
             </button>
           </form>
@@ -135,21 +135,18 @@ const LoginScreen = () => {
           <div className="mt-8 pt-6 border-t border-border">
             <div className="flex items-center gap-2 mb-3">
               <Icon name="Info" size={16} className="text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">بيانات الدخول التجريبية</p>
+              <p className="text-sm font-medium text-foreground">Demo Credentials</p>
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                <span className="text-muted-foreground">مدير النظام:</span>
+                <span className="text-muted-foreground">Admin:</span>
                 <span className="font-mono text-foreground text-xs">admin@company.com / admin123</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                <span className="text-muted-foreground">وكيل:</span>
+                <span className="text-muted-foreground">Agent:</span>
                 <span className="font-mono text-foreground text-xs">agent@company.com / agent123</span>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-3 text-center">
-              يجب إنشاء هذه الحسابات في Supabase Authentication
-            </p>
           </div>
 
         </div>

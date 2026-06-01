@@ -37,11 +37,11 @@ const FileUploadZone = ({ onFilesAdded, className = '' }) => {
     files.forEach(file => {
       const isAudio = SUPPORTED_TYPES.includes(file.type) || file.name.match(/\.(mp3|wav|m4a|webm|ogg|mp4)$/i);
       if (!isAudio) {
-        alert(`الصيغة غير مدعومة: ${file.name}\nالصيغ المدعومة: MP3, WAV, M4A, WebM, OGG`);
+        alert(`Unsupported format: ${file.name}\nSupported formats: MP3, WAV, M4A, WebM, OGG`);
         return;
       }
       if (file.size > MAX_SIZE) {
-        alert(`الملف كبير جداً: ${file.name}\nالحد الأقصى هو 20MB للتوافق مع Gemini AI.`);
+        alert(`File too large: ${file.name}\nMaximum size is 20MB for Gemini AI compatibility.`);
         return;
       }
       valid.push(file);
@@ -111,9 +111,9 @@ const FileUploadZone = ({ onFilesAdded, className = '' }) => {
             <Icon name="FileAudio" size={32} color={isDragging ? 'var(--color-primary)' : 'var(--color-muted-foreground)'} />
           </div>
           <h3 className="text-lg font-medium text-foreground mb-1">
-            {isDragging ? '🎵 أفلت الملف هنا' : 'اسحب وأفلت الملفات الصوتية'}
+            {isDragging ? '🎵 Drop file here' : 'Drag & drop audio files'}
           </h3>
-          <p className="text-sm text-muted-foreground mb-4">أو انقر للاختيار من جهازك</p>
+          <p className="text-sm text-muted-foreground mb-4">or click to select from your device</p>
 
           <Button variant="outline" iconName="FolderOpen" iconPosition="left">
             Browse Files
@@ -122,7 +122,7 @@ const FileUploadZone = ({ onFilesAdded, className = '' }) => {
           <div className="mt-5 pt-5 border-t border-border w-full grid grid-cols-2 gap-2 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <Icon name="HardDrive" size={13} />
-              <span>الحد الأقصى 20MB</span>
+              <span>Max 20MB</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Icon name="Music" size={13} />
@@ -130,7 +130,7 @@ const FileUploadZone = ({ onFilesAdded, className = '' }) => {
             </div>
             <div className="flex items-center gap-1.5 col-span-2">
               <Icon name="Sparkles" size={13} className="text-primary" />
-              <span className="text-primary">Gemini AI سيحوّل الصوت لنص تلقائياً</span>
+              <span className="text-primary">Gemini AI auto-transcribes audio to text</span>
             </div>
           </div>
         </div>
@@ -140,7 +140,7 @@ const FileUploadZone = ({ onFilesAdded, className = '' }) => {
       {pendingFiles.length > 0 && (
         <div className="flex flex-col gap-3">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            الملفات المختارة ({pendingFiles.length})
+            Selected Files ({pendingFiles.length})
           </p>
 
           <div className="space-y-2">
@@ -169,7 +169,7 @@ const FileUploadZone = ({ onFilesAdded, className = '' }) => {
               onClick={cancelUpload}
               className="flex-1"
             >
-              إلغاء
+              Cancel
             </Button>
             <Button
               variant="default" size="sm"
@@ -177,7 +177,7 @@ const FileUploadZone = ({ onFilesAdded, className = '' }) => {
               onClick={confirmUpload}
               className="flex-1"
             >
-              تحليل {pendingFiles.length > 1 ? `(${pendingFiles.length})` : ''}
+              Analyze {pendingFiles.length > 1 ? `(${pendingFiles.length})` : ''}
             </Button>
           </div>
         </div>
