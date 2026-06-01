@@ -31,7 +31,7 @@ const Header = () => {
       path: '/customer-insights',
       icon: 'Users',
       tooltip: 'Strategic analytics for business decision-making',
-      roles: ['admin', 'agent'] // Both admin and agent
+      roles: ['admin'] // Admin only
     },
     {
       label: 'Agent Performance',

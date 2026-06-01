@@ -66,7 +66,7 @@ const Routes = () => {
             <Route
               path="/customer-insights"
               element={
-                <ProtectedRoute allowedRoles={['admin', 'agent']}>
+                <ProtectedRoute allowedRoles={['admin']}>
                   <CustomerInsights />
                 </ProtectedRoute>
               }
@@ -112,7 +112,7 @@ const Routes = () => {
             <Route
               path="/call-recordings"
               element={
-                <ProtectedRoute allowedRoles={['admin', 'agent']}>
+                <ProtectedRoute allowedRoles={['admin']}>
                   <CallRecordings />
                 </ProtectedRoute>
               }
