@@ -7,6 +7,8 @@ import GeminiAnalysisPanel from '../../components/GeminiAnalysisPanel';
 import SentimentAlertFeed from '../customer-insights/components/SentimentAlertFeed';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { supabase } from '../../lib/supabase';
+import { extractTopics } from '../../services/geminiService';
+
 import {
   fetchCallById,
   fetchCallByRef,
@@ -21,13 +23,17 @@ const CallDetails = () => {
   const { callId } = useParams();
   const navigate   = useNavigate();
 
-  const [callData,    setCallData]    = useState(null);
-  const [transcript,  setTranscript]  = useState([]);
-  const [topics,      setTopics]      = useState([]);
-  const [qaResults,   setQaResults]   = useState([]);
-  const [callAlerts,  setCallAlerts]  = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState(null);
+  const [callData,       setCallData]       = useState(null);
+  const [transcript,     setTranscript]     = useState([]);
+  const [topics,         setTopics]         = useState([]);
+  const [qaResults,      setQaResults]      = useState([]);
+  const [callAlerts,     setCallAlerts]     = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState(null);
+  // AI-extracted topics
+  const [aiTopics,       setAiTopics]       = useState([]);
+  const [topicsLoading,  setTopicsLoading]  = useState(false);
+  const [topicsError,    setTopicsError]    = useState(null);
 
   useEffect(() => {
     if (!callId) return;
@@ -76,7 +82,27 @@ const CallDetails = () => {
       .order('created_at', { ascending: false })
       .limit(10);
     setCallAlerts(data ?? []);
-  };
+  };  // ── Auto-extract AI topics once transcript is available ──────────────────────
+  useEffect(() => {
+    // Build plain text from transcript segments
+    const plainText = transcript
+      .map(s => `${s.speaker}: ${s.message}`)
+      .join('\n')
+      .trim();
+
+    // Also use callData.transcript_text as fallback
+    const text = plainText || (callData?.transcript_text ?? '');
+    if (!text || topicsLoading) return;
+
+    setTopicsLoading(true);
+    setTopicsError(null);
+    extractTopics(text)
+      .then(result => setAiTopics(Array.isArray(result) ? result : []))
+      .catch(err   => setTopicsError(err.message ?? 'AI topics failed'))
+      .finally(()  => setTopicsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript, callData?.id]);
+
 
   const getSentimentColor = s => ({ satisfied: 'bg-emerald-500', neutral: 'bg-slate-500', frustrated: 'bg-amber-500', angry: 'bg-rose-500' }[s] ?? 'bg-slate-500');
   const getSentimentBadge = s => {
@@ -124,10 +150,17 @@ const CallDetails = () => {
 
   const customer = callData.customers;
   const agent    = callData.agents;
-  const talkData = [
-    { speaker: 'Agent',    percentage: Math.round(callData.agent_talk_pct ?? 40),    color: TALK_RATIO_COLORS.agent    },
-    { speaker: 'Customer', percentage: Math.round(callData.customer_talk_pct ?? 60), color: TALK_RATIO_COLORS.customer },
-  ];
+
+  // ── Talk Ratio calculation ──────────────────────────────────────────────────
+  // Priority 1: count words from actual transcript segments
+  // Priority 2: use DB columns agent_talk_pct / customer_talk_pct
+  // No hardcoded fallback — if no data available show 0/0
+  let agentPct    = 0;
+  let customerPct = 0;
+  let talkSource  = null; // 'transcript' | 'database' | null
+
+  // We'll compute this after displayTranscript is built (see below).
+  // For now set placeholders; will be overwritten after transcript parsing.
 
   // Use DB smart topics or fallback
   const displayTopics = topics.length > 0 ? topics : [
@@ -163,6 +196,34 @@ const CallDetails = () => {
         return { speaker: i % 2 === 0 ? 'agent' : 'customer', message: line, sentiment: 'neutral', timestamp: '' };
       });
   }
+
+  // ── Compute talk ratio from transcript ──────────────────────────────────────
+  // Count words spoken by each speaker in the transcript
+  const wordCount = { agent: 0, customer: 0 };
+  for (const msg of displayTranscript) {
+    const words = (msg.message ?? '').trim().split(/\s+/).filter(Boolean).length;
+    if (msg.speaker === 'agent')    wordCount.agent    += words;
+    else if (msg.speaker === 'customer') wordCount.customer += words;
+  }
+  const totalWords = wordCount.agent + wordCount.customer;
+
+  if (totalWords > 0) {
+    // Calculated from real transcript
+    agentPct    = Math.round((wordCount.agent    / totalWords) * 100);
+    customerPct = Math.round((wordCount.customer / totalWords) * 100);
+    talkSource  = 'transcript';
+  } else if (callData.agent_talk_pct != null || callData.customer_talk_pct != null) {
+    // Fall back to DB columns if transcript unavailable
+    agentPct    = Math.round(callData.agent_talk_pct    ?? 0);
+    customerPct = Math.round(callData.customer_talk_pct ?? 0);
+    talkSource  = 'database';
+  }
+  // else: both stay 0 — no data available
+
+  const talkData = [
+    { speaker: 'Agent',    percentage: agentPct,    words: wordCount.agent,    color: TALK_RATIO_COLORS.agent    },
+    { speaker: 'Customer', percentage: customerPct, words: wordCount.customer, color: TALK_RATIO_COLORS.customer },
+  ];
 
   return (
     <>
@@ -231,32 +292,176 @@ const CallDetails = () => {
           {/* Talk Ratio / Topics / QA */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             <div className="bg-card border border-border rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-foreground mb-4">Talk-to-Listen Ratio</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={talkData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis type="number" domain={[0, 100]} stroke="var(--color-muted-foreground)" />
-                  <YAxis dataKey="speaker" type="category" stroke="var(--color-muted-foreground)" />
-                  <Tooltip contentStyle={{ backgroundColor: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: '8px' }} formatter={v => `${v}%`} />
-                  <Bar dataKey="percentage" radius={[0, 8, 8, 0]}>
-                    {talkData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-semibold text-foreground">Talk-to-Listen Ratio</h3>
+                {talkSource && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    talkSource === 'transcript'
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'bg-blue-500/10 text-blue-400'
+                  }`}>
+                    {talkSource === 'transcript' ? '📝 From transcript' : '🗄 From database'}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Based on word count per speaker
+              </p>
+
+              {/* Percentage summary */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: TALK_RATIO_COLORS.agent }} />
+                  <span className="text-sm text-foreground font-semibold">{agentPct}%</span>
+                  <span className="text-xs text-muted-foreground">Agent</span>
+                  {wordCount.agent > 0 && (
+                    <span className="text-xs text-muted-foreground">({wordCount.agent} words)</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {wordCount.customer > 0 && (
+                    <span className="text-xs text-muted-foreground">({wordCount.customer} words)</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">Customer</span>
+                  <span className="text-sm text-foreground font-semibold">{customerPct}%</span>
+                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: TALK_RATIO_COLORS.customer }} />
+                </div>
+              </div>
+
+              {talkSource ? (
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={talkData} layout="vertical" margin={{ left: 0, right: 30 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                    <XAxis type="number" domain={[0, 100]} stroke="var(--color-muted-foreground)" tickFormatter={v => `${v}%`} />
+                    <YAxis dataKey="speaker" type="category" stroke="var(--color-muted-foreground)" width={65} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: '8px' }}
+                      formatter={(v, name, props) => [
+                        `${v}%${props.payload.words ? ` (${props.payload.words} words)` : ''}`,
+                        props.payload.speaker,
+                      ]}
+                    />
+                    <Bar dataKey="percentage" radius={[0, 8, 8, 0]} label={{ position: 'right', formatter: v => `${v}%`, fill: 'var(--color-muted-foreground)', fontSize: 11 }}>
+                      {talkData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-32 text-center gap-2">
+                  <Icon name="MessageSquareOff" size={28} className="text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">No transcript data to calculate ratio</p>
+                </div>
+              )}
             </div>
 
             <div className="bg-card border border-border rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-foreground mb-4">Smart Topics</h3>
-              <div className="flex flex-wrap gap-3">
-                {displayTopics.map((t, i) => (
-                  <div key={i} className="flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full border border-primary/20">
-                    <Icon name={t.icon} size={16} className="text-primary" />
-                    <span className="text-sm font-medium text-primary">{t.tag}</span>
-                  </div>
-                ))}
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-foreground">Smart Topics</h3>
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 font-medium">
+                    <Icon name="Sparkles" size={11} />
+                    Gemini AI
+                  </span>
+                </div>
+                {/* Retry button */}
+                {!topicsLoading && (
+                  <button
+                    onClick={() => {
+                      const plainText = transcript.map(s => `${s.speaker}: ${s.message}`).join('\n').trim();
+                      const text = plainText || (callData?.transcript_text ?? '');
+                      if (!text) return;
+                      setTopicsLoading(true);
+                      setTopicsError(null);
+                      extractTopics(text)
+                        .then(r => setAiTopics(Array.isArray(r) ? r : []))
+                        .catch(e => setTopicsError(e.message))
+                        .finally(() => setTopicsLoading(false));
+                    }}
+                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+                    title="Re-extract topics"
+                  >
+                    <Icon name="RefreshCw" size={14} />
+                  </button>
+                )}
               </div>
-              <div className="mt-6 pt-6 border-t border-border">
-                <p className="text-xs text-muted-foreground">Topics detected using AI-powered intent recognition</p>
+
+              {/* Loading */}
+              {topicsLoading && (
+                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                  <div className="relative w-10 h-10">
+                    <div className="absolute inset-0 rounded-full border-2 border-violet-500/20" />
+                    <div className="absolute inset-0 rounded-full border-t-2 border-violet-500 animate-spin" />
+                    <Icon name="Sparkles" size={16} className="absolute inset-0 m-auto text-violet-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground animate-pulse">Gemini is analyzing the transcript…</p>
+                </div>
+              )}
+
+              {/* Error */}
+              {!topicsLoading && topicsError && (
+                <div className="flex items-start gap-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg mb-3">
+                  <Icon name="AlertTriangle" size={14} className="text-rose-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-rose-400">{topicsError}</p>
+                </div>
+              )}
+
+              {/* Topics chips */}
+              {!topicsLoading && aiTopics.length > 0 && (() => {
+                const CATEGORY_STYLES = {
+                  billing:    { bg: 'bg-amber-500/10',  border: 'border-amber-500/20',  text: 'text-amber-400',  icon: 'DollarSign'   },
+                  technical:  { bg: 'bg-blue-500/10',   border: 'border-blue-500/20',   text: 'text-blue-400',   icon: 'Wrench'       },
+                  service:    { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', icon: 'Headphones'  },
+                  product:    { bg: 'bg-purple-500/10', border: 'border-purple-500/20', text: 'text-purple-400', icon: 'Package'      },
+                  account:    { bg: 'bg-sky-500/10',    border: 'border-sky-500/20',    text: 'text-sky-400',    icon: 'User'         },
+                  logistics:  { bg: 'bg-orange-500/10', border: 'border-orange-500/20', text: 'text-orange-400', icon: 'Truck'        },
+                  default:    { bg: 'bg-primary/10',    border: 'border-primary/20',    text: 'text-primary',    icon: 'Tag'          },
+                };
+                return (
+                  <div className="space-y-3">
+                    {aiTopics.map((t, i) => {
+                      const style = CATEGORY_STYLES[t.category] ?? CATEGORY_STYLES.default;
+                      const rel   = Math.round((t.relevance_score ?? 0.5) * 100);
+                      return (
+                        <div key={i} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${style.bg} ${style.border}`}>
+                          <Icon name={style.icon} size={16} className={style.text} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`text-sm font-semibold ${style.text}`}>#{t.name}</span>
+                              <span className="text-xs text-muted-foreground">{rel}%</span>
+                            </div>
+                            {/* Relevance bar */}
+                            <div className="h-1 bg-border rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-700`}
+                                style={{ width: `${rel}%`, backgroundColor: `var(--color-${style.text.replace('text-', '').replace('-400','')}, #6366f1)` }}
+                              />
+                            </div>
+                          </div>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-md ${style.bg} ${style.text} capitalize font-medium`}>
+                            {t.category}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {/* Empty — no transcript yet */}
+              {!topicsLoading && !topicsError && aiTopics.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
+                  <Icon name="MessageSquareOff" size={28} className="text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">No transcript available to extract topics</p>
+                </div>
+              )}
+
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Icon name="Sparkles" size={11} className="text-violet-400" />
+                  Topics extracted by Gemini AI from conversation transcript
+                </p>
               </div>
             </div>
 
