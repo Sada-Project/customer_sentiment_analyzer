@@ -60,7 +60,7 @@ const PerformanceAnalytics = () => {
               title:      row.metric_label,
               value:      row.metric_unit === '%' ? Number(row.metric_value).toFixed(1) : Number(row.metric_value).toFixed(2),
               unit:       cfg.unit ?? row.metric_unit ?? '',
-              change:     row.change_value != null ? Number(row.change_value) : 0,
+              change:     row.change_value != null ? Number(row.change_value) : undefined,
               changeType: row.change_type ?? 'neutral',
               icon:       cfg.icon ?? 'BarChart2',
               iconColor:  cfg.iconColor ?? 'var(--color-primary)',
@@ -103,13 +103,8 @@ const PerformanceAnalytics = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Fallback KPIs if DB empty
-  const displayKPIs = kpiMetrics.length > 0 ? kpiMetrics : [
-    { title: 'Processing Speed',         value: '2.3',  unit: 'sec/file', change: -12, changeType: 'negative', icon: 'Zap',           iconColor: 'var(--color-primary)', threshold: 3.0  },
-    { title: 'Transcription Confidence', value: '96.8', unit: '%',        change: 2.4, changeType: 'positive', icon: 'Target',        iconColor: 'var(--color-success)', threshold: 95.0 },
-    { title: 'Sentiment Confidence',     value: '94.2', unit: '%',        change: 1.8, changeType: 'positive', icon: 'TrendingUp',    iconColor: 'var(--color-warning)', threshold: 90.0 },
-    { title: 'Script Adherence Rate',    value: '91.5', unit: '%',        change: 3.2, changeType: 'positive', icon: 'ClipboardCheck', iconColor: 'var(--color-success)', threshold: 85.0 },
-  ];
+  // Show only real DB data — no fake fallback
+  const displayKPIs = kpiMetrics;
 
   const displayChart = chartData.length > 0 ? chartData : [
     { time: '00:00', filesUploaded: 156, filesProcessed: 145, accuracy: 96.2, scriptAdherence: 89.5 },
