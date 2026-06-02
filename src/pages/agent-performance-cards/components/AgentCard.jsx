@@ -50,7 +50,6 @@ const AgentCard = ({ agent }) => {
   const initials = agent?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? '?';
   const perf     = Number(agent?.performanceScore ?? 0);
   const csat     = Number(agent?.csatScore ?? 0);
-  const fcr      = Number(agent?.fcrRate ?? 0);
 
   return (
     <div className="bg-card border border-border rounded-xl p-5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-200 flex flex-col gap-4">
@@ -117,7 +116,7 @@ const AgentCard = ({ agent }) => {
         </div>
       </div>
 
-      {/* ── Metrics Grid (2×2) ── */}
+      {/* ── Metrics Grid (1×2) ── */}
       <div className="grid grid-cols-2 gap-2">
 
         {/* Calls Handled */}
@@ -133,34 +132,6 @@ const AgentCard = ({ agent }) => {
                 <Icon {...getTrendIcon(agent.callsTrend)} size={11} />
                 <span className={`text-[10px] ${getTrendClass(agent.callsTrend)}`}>
                   {agent.callsTrend > 0 ? '+' : ''}{agent.callsTrend}%
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* CSAT Score */}
-        <div className="bg-muted/30 border border-border rounded-lg p-3">
-          <div className="flex items-center gap-1.5 mb-1">
-            <Icon name="Star" size={12} className="text-muted-foreground" />
-            <span className="text-[10px] text-muted-foreground">CSAT Score</span>
-          </div>
-          <span className="text-base font-bold text-foreground">{csat}%</span>
-        </div>
-
-        {/* FCR Rate */}
-        <div className="bg-muted/30 border border-border rounded-lg p-3">
-          <div className="flex items-center gap-1.5 mb-1">
-            <Icon name="Target" size={12} className="text-muted-foreground" />
-            <span className="text-[10px] text-muted-foreground">FCR Rate</span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-base font-bold text-foreground">{fcr}%</span>
-            {agent?.fcrTrend !== undefined && agent?.fcrTrend !== 0 && (
-              <div className="flex items-center gap-0.5">
-                <Icon {...getTrendIcon(agent.fcrTrend)} size={11} />
-                <span className={`text-[10px] ${getTrendClass(agent.fcrTrend)}`}>
-                  {agent.fcrTrend > 0 ? '+' : ''}{agent.fcrTrend}%
                 </span>
               </div>
             )}
