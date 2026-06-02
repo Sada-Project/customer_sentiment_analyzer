@@ -48,7 +48,6 @@ const formatLastSeen = (ts) => {
 // ─── Main Card ────────────────────────────────────────────────────────────────
 const AgentCard = ({ agent }) => {
   const initials = agent?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? '?';
-  const perf     = Number(agent?.performanceScore ?? 0);
   const csat     = Number(agent?.csatScore ?? 0);
 
   return (
@@ -101,20 +100,6 @@ const AgentCard = ({ agent }) => {
           {agent.badges.map((b, i) => <BadgeChip key={i} badge={b.badge} label={b.label} />)}
         </div>
       )}
-
-      {/* ── Performance Score bar ── */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs text-muted-foreground">Performance Score</span>
-          <span className="text-sm font-bold text-foreground">{perf}%</span>
-        </div>
-        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className={`h-full bg-gradient-to-r ${getBarColor(perf)} rounded-full transition-all duration-700`}
-            style={{ width: `${perf}%` }}
-          />
-        </div>
-      </div>
 
       {/* ── Metrics Grid (1×2) ── */}
       <div className="grid grid-cols-2 gap-2">

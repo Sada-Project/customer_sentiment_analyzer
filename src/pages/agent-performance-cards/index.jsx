@@ -89,10 +89,10 @@ const AgentPerformanceCards = () => {
 
   // Stat cards definition — only show data we actually have
   const STAT_CARDS = [
-    { label: 'Total Agents',        value: stats?.totalAgents,                            icon: 'Users',       color: 'bg-blue-600'   },
-    { label: 'Online Now',          value: stats?.onlineAgents,                           icon: 'UserCheck',   color: 'bg-emerald-600' },
-    { label: 'Avg Performance',     value: stats?.avgPerformance != null ? `${stats.avgPerformance}%` : '—', icon: 'TrendingUp', color: 'bg-violet-600' },
-    { label: 'Calls Handled Total', value: stats?.totalCallsHandled?.toLocaleString(),    icon: 'Phone',       color: 'bg-amber-600'  },
+    { label: 'Total Agents',              value: stats?.totalAgents,                                          icon: 'Users',       color: 'bg-blue-600'   },
+    { label: 'Online Now',                value: stats?.onlineAgents,                                         icon: 'UserCheck',   color: 'bg-emerald-600' },
+    { label: 'Avg Customer Satisfaction', value: stats?.avgCsat != null ? `${stats.avgCsat}%` : '—',          icon: 'SmilePlus',   color: 'bg-violet-600' },
+    { label: 'Calls Handled Total',       value: stats?.totalCallsHandled?.toLocaleString(),                  icon: 'Phone',       color: 'bg-amber-600'  },
   ];
 
   return (
