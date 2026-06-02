@@ -15,6 +15,8 @@ import {
   fetchTranscript,
   fetchCallTopics,
   fetchCallQA,
+  saveCallTopics,
+  saveCallCompliance,
 } from '../../services/callDetailsService';
 
 const TALK_RATIO_COLORS = { agent: '#3b82f6', customer: '#64748b' };
@@ -31,13 +33,15 @@ const CallDetails = () => {
   const [loading,        setLoading]        = useState(true);
   const [error,          setError]          = useState(null);
   // AI-extracted topics
-  const [aiTopics,       setAiTopics]       = useState([]);
-  const [topicsLoading,  setTopicsLoading]  = useState(false);
-  const [topicsError,    setTopicsError]    = useState(null);
+  const [aiTopics,         setAiTopics]         = useState([]);
+  const [topicsLoading,    setTopicsLoading]    = useState(false);
+  const [topicsError,      setTopicsError]      = useState(null);
+  // Flag: true only after DB topics fetch is fully resolved
+  const [dbTopicsChecked,  setDbTopicsChecked]  = useState(false);
   // AI script compliance
-  const [qaAI,           setQaAI]           = useState([]);
-  const [qaLoading,      setQaLoading]      = useState(false);
-  const [qaError,        setQaError]        = useState(null);
+  const [qaAI,             setQaAI]             = useState([]);
+  const [qaLoading,        setQaLoading]        = useState(false);
+  const [qaError,          setQaError]          = useState(null);
 
   useEffect(() => {
     if (!callId) return;
@@ -70,6 +74,8 @@ const CallDetails = () => {
         setTopics(tops);
         setQaResults(qa);
         setCallAlerts(alertsRes.data ?? []);
+        // ✅ Signal that DB topics are now in state — safe to decide on Gemini
+        setDbTopicsChecked(true);
       })
       .catch(err => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -86,28 +92,74 @@ const CallDetails = () => {
       .order('created_at', { ascending: false })
       .limit(10);
     setCallAlerts(data ?? []);
-  };  // ── Auto-extract AI topics once transcript is available ──────────────────────
+  };  // ── Auto-extract AI topics — DB-first, Gemini only if no cached data ────────
+  // dbTopicsChecked is set to true inside the same .then() that sets topics,
+  // guaranteeing we only run this logic AFTER the DB fetch is fully committed.
   useEffect(() => {
-    // Build plain text from transcript segments
-    const plainText = transcript
-      .map(s => `${s.speaker}: ${s.message}`)
-      .join('\n')
-      .trim();
+    if (!dbTopicsChecked || !callData?.id) return;
 
-    // Also use callData.transcript_text as fallback
-    const text = plainText || (callData?.transcript_text ?? '');
-    if (!text || topicsLoading) return;
+    // ✅ DB already has topics — display immediately, skip Gemini entirely
+    if (topics.length > 0) {
+      setAiTopics(topics.map(t => ({
+        name:            t.name ?? t.tag?.replace(/^#/, ''),
+        relevance_score: t.score ?? 0.5,
+        category:        t.category ?? 'service',
+      })));
+      return;
+    }
+
+    // DB check is done and returned 0 rows → extract with Gemini (first visit only)
+    // Guard: if already extracted in this session, do nothing
+    if (aiTopics.length > 0 || topicsLoading) return;
+
+    const plainText = transcript.map(s => `${s.speaker}: ${s.message}`).join('\n').trim();
+    const text = plainText || callData?.transcript_text || callData?.ai_summary || '';
+    if (!text) return;
 
     setTopicsLoading(true);
     setTopicsError(null);
     extractTopics(text)
-      .then(result => setAiTopics(Array.isArray(result) ? result : []))
-      .catch(err   => setTopicsError(err.message ?? 'AI topics failed'))
+      .then(result => {
+        const valid = Array.isArray(result) ? result : [];
+        setAiTopics(valid);
+        // 💾 Save to DB — next visit will skip Gemini and load from here
+        if (valid.length > 0) {
+          saveCallTopics(callData.id, valid)
+            .then(() => console.info('[SmartTopics] ✅ Saved to DB for call', callData.id))
+            .catch(console.warn);
+        }
+      })
+      .catch(err => setTopicsError(err.message ?? 'AI topics failed'))
       .finally(()  => setTopicsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript, callData?.id]);
+  }, [dbTopicsChecked, callData?.id]);
 
-  // ── Auto-run Script Compliance check once transcript is available ────────────
+  // ── Script Compliance — DB-first, Gemini only if no cached data ────────────
+  useEffect(() => {
+    if (loading || !callData?.id) return;
+
+    // ✅ DB already has QA results — map to display format, skip Gemini
+    if (qaResults.length > 0) {
+      const aiFormat = QA_CRITERIA
+        .map(criterion => {
+          const dbRow = qaResults.find(r => r.item === criterion.title);
+          return dbRow
+            ? { criteria_id: criterion.id, passed: dbRow.status === 'pass', details: dbRow.details }
+            : null;
+        })
+        .filter(Boolean);
+      if (aiFormat.length > 0) { setQaAI(aiFormat); return; }
+    }
+
+    if (!transcript.length && !callData?.transcript_text && !callData?.ai_summary) return;
+
+    // Stagger: 2s after Smart Topics to avoid concurrent Gemini calls
+    const timer = setTimeout(() => {
+      runComplianceCheck(transcript, callData?.transcript_text || callData?.ai_summary);
+    }, 2000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, callData?.id]);
   const QA_CRITERIA = [
     {
       id:          'greeting',
@@ -131,16 +183,19 @@ const CallDetails = () => {
     setQaLoading(true);
     setQaError(null);
     checkScriptCompliance(text, QA_CRITERIA)
-      .then(results => setQaAI(Array.isArray(results) ? results : []))
-      .catch(err   => setQaError(err.message ?? 'Compliance check failed'))
+      .then(results => {
+        const valid = Array.isArray(results) ? results : [];
+        setQaAI(valid);
+        // 💾 Save to DB for next visit
+        if (valid.length > 0 && callData?.id) {
+          saveCallCompliance(callData.id, valid, QA_CRITERIA).catch(console.warn);
+        }
+      })
+      .catch(err => setQaError(err.message ?? 'Compliance check failed'))
       .finally(()  => setQaLoading(false));
   };
 
-  useEffect(() => {
-    if (!transcript.length && !callData?.transcript_text) return;
-    runComplianceCheck(transcript, callData?.transcript_text);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript, callData?.id]);
+  // Old compliance useEffect removed — merged into the DB-first effect above
 
 
   const getSentimentColor = s => ({ satisfied: 'bg-emerald-500', neutral: 'bg-slate-500', frustrated: 'bg-amber-500', angry: 'bg-rose-500' }[s] ?? 'bg-slate-500');
@@ -407,12 +462,19 @@ const CallDetails = () => {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-semibold text-foreground">Smart Topics</h3>
-                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 font-medium">
-                    <Icon name="Sparkles" size={11} />
-                    Gemini AI
-                  </span>
+                  {topics.length > 0 ? (
+                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium">
+                      <Icon name="Database" size={11} />
+                      Cached
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 font-medium">
+                      <Icon name="Sparkles" size={11} />
+                      Gemini AI
+                    </span>
+                  )}
                 </div>
-                {/* Retry button */}
+                {/* Retry button — re-extracts from Gemini and saves to DB */}
                 {!topicsLoading && (
                   <button
                     onClick={() => {
@@ -422,7 +484,13 @@ const CallDetails = () => {
                       setTopicsLoading(true);
                       setTopicsError(null);
                       extractTopics(text)
-                        .then(r => setAiTopics(Array.isArray(r) ? r : []))
+                        .then(r => {
+                          const valid = Array.isArray(r) ? r : [];
+                          setAiTopics(valid);
+                          if (valid.length > 0 && callData?.id) {
+                            saveCallTopics(callData.id, valid).catch(console.warn);
+                          }
+                        })
                         .catch(e => setTopicsError(e.message))
                         .finally(() => setTopicsLoading(false));
                     }}
@@ -433,6 +501,7 @@ const CallDetails = () => {
                   </button>
                 )}
               </div>
+
 
               {/* Loading */}
               {topicsLoading && (
@@ -496,11 +565,27 @@ const CallDetails = () => {
                 );
               })()}
 
-              {/* Empty — no transcript yet */}
-              {!topicsLoading && !topicsError && aiTopics.length === 0 && (
+              {/* Empty — no transcript and no DB topics */}
+              {!topicsLoading && !topicsError && aiTopics.length === 0 && topics.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
                   <Icon name="MessageSquareOff" size={28} className="text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">No transcript available to extract topics</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(transcript.length > 0 || callData?.transcript_text || callData?.ai_summary)
+                      ? 'No topics identified in this call'
+                      : 'No transcript available to extract topics'}
+                  </p>
+                </div>
+              )}
+
+              {/* Fallback to DB topics when AI extraction yielded nothing */}
+              {!topicsLoading && !topicsError && aiTopics.length === 0 && topics.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {topics.map((t, i) => (
+                    <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 text-violet-400 rounded-full text-xs font-medium">
+                      {t.icon && <Icon name={t.icon} size={12} />}
+                      {t.tag}
+                    </span>
+                  ))}
                 </div>
               )}
 
@@ -802,6 +887,7 @@ const CallDetails = () => {
               transcript={displayTranscript}
               transcriptText={callData?.transcript_text ?? ''}
               loading={loading}
+              callId={callData?.id ?? null}
             />
           </div>
 

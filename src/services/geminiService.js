@@ -10,13 +10,14 @@ const BASE_URL = 'https://generativelanguage.googleapis.com';
 
 // ── Fallback models (tried in order if auto-discovery fails) ──────────────────
 const MODELS = [
-  { version: 'v1beta', name: 'gemini-2.0-flash-lite'  },
-  { version: 'v1beta', name: 'gemini-2.0-flash'       },
-  { version: 'v1beta', name: 'gemini-1.5-flash'       },
-  { version: 'v1beta', name: 'gemini-1.5-flash-8b'    },
-  { version: 'v1beta', name: 'gemini-1.5-pro'         },
-  { version: 'v1',     name: 'gemini-2.0-flash-lite'  },
-  { version: 'v1',     name: 'gemini-1.5-flash'       },
+  { version: 'v1beta', name: 'gemini-2.5-flash-preview-05-20' },
+  { version: 'v1beta', name: 'gemini-2.5-flash'               },
+  { version: 'v1beta', name: 'gemini-2.5-pro'                 },
+  { version: 'v1beta', name: 'gemini-2.0-flash-lite'          },
+  { version: 'v1beta', name: 'gemini-1.5-flash'               },
+  { version: 'v1beta', name: 'gemini-1.5-flash-8b'            },
+  { version: 'v1beta', name: 'gemini-1.5-pro'                 },
+  { version: 'v1',     name: 'gemini-1.5-flash'               },
 ];
 
 let _model = null; // cached after first successful call
@@ -121,57 +122,220 @@ function blobToBase64(blob) {
   });
 }
 
+// Models that support audio/multimodal input — tried in order
+const AUDIO_MODELS = [
+  { version: 'v1beta', name: 'gemini-2.5-flash-preview-05-20' },
+  { version: 'v1beta', name: 'gemini-2.5-flash'               },
+  { version: 'v1beta', name: 'gemini-2.5-pro'                 },
+  { version: 'v1beta', name: 'gemini-1.5-flash-latest'        },
+  { version: 'v1beta', name: 'gemini-1.5-flash'               },
+  { version: 'v1beta', name: 'gemini-1.5-flash-002'           },
+  { version: 'v1beta', name: 'gemini-1.5-pro-latest'          },
+  { version: 'v1beta', name: 'gemini-1.5-pro'                 },
+];
+
+// Normalize MIME type — strip codec params, fix common aliases
+function normalizeMime(type) {
+  const base = (type || 'audio/webm').split(';')[0].trim().toLowerCase();
+  if (base === 'audio/mp3') return 'audio/mpeg';
+  return base;
+}
+
+// ── Upload audio to Gemini Files API, return file URI ────────────────────────
+async function uploadAudioFile(blob, mimeType, onProgress) {
+  onProgress('جارٍ رفع الملف الصوتي…');
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=media&key=${API_KEY}`,
+    {
+      method:  'POST',
+      headers: { 'Content-Type': mimeType },
+      body:    blob,
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Files API: ${err?.error?.message ?? `HTTP ${res.status}`}`);
+  }
+
+  const data = await res.json();
+  const file = data?.file;
+  const uri  = file?.uri;
+  const name = file?.name; // e.g. "files/abc123"
+
+  if (!uri) throw new Error('Files API: no URI in response');
+
+  // Wait for file to become ACTIVE (sometimes starts as PROCESSING)
+  if (file?.state === 'PROCESSING' && name) {
+    onProgress('جارٍ معالجة الملف الصوتي…');
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const chk = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/${name}?key=${API_KEY}`
+      );
+      const chkData = await chk.json();
+      if (chkData?.state === 'ACTIVE') break;
+      if (chkData?.state === 'FAILED') throw new Error('File processing failed by Gemini');
+    }
+  }
+
+  console.info('[Gemini Files] ✅ uploaded:', uri);
+  return uri;
+}
+
 export async function transcribeAudio(audioBlob, onProgress = () => {}) {
+  if (!API_KEY || API_KEY === 'your-gemini-api-key-here') {
+    throw new Error('Gemini API key not set in .env');
+  }
   if (!audioBlob || audioBlob.size === 0) throw new Error('ملف الصوت فارغ أو غير موجود.');
-  if (audioBlob.size > 20 * 1024 * 1024)  throw new Error('حجم الملف يتجاوز الحد المسموح (20MB). يرجى استخدام ملف أصغر.');
+  if (audioBlob.size > 50 * 1024 * 1024) throw new Error('حجم الملف يتجاوز الحد المسموح (50MB). يرجى استخدام ملف أصغر.');
 
-  // Ensure a working model is cached first
-  if (!_model) await callGemini('hi');
-  if (!_model) throw new Error('لا يوجد نموذج Gemini متاح. تحقق من مفتاح الـ API.');
+  const mimeType = normalizeMime(audioBlob.type);
+  console.info('[Gemini Audio] Starting transcription, size:', audioBlob.size, 'mime:', mimeType);
 
-  onProgress('جارٍ تحويل الصوت…');
-  const base64   = await blobToBase64(audioBlob);
-  const mimeType = audioBlob.type || 'audio/webm';
-
-  onProgress('جارٍ إرسال الصوت إلى Gemini AI…');
-  const url = `${BASE_URL}/${_model.version}/models/${_model.name}:generateContent?key=${API_KEY}`;
-  const res = await fetch(url, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { inline_data: { mime_type: mimeType, data: base64 } },
-          { text: `You are a professional transcription engine for a call center.
+  const transcriptionPrompt = `You are a professional transcription engine for a call center.
 Transcribe ALL speech in this audio VERBATIM — word for word, exactly as spoken.
 Support Arabic (العربية) and English including mixed speech (code-switching).
 If there are multiple speakers label them: "Speaker 1: ..." / "Speaker 2: ..."
 Do NOT summarize, translate, or add commentary.
-Output ONLY the transcript text — nothing else.` },
-        ],
-      }],
-      generationConfig: { temperature: 0.0, maxOutputTokens: 8192 },
-    }),
-  });
+Output ONLY the transcript text — nothing else.`;
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`فشل التحويل: ${err?.error?.message ?? `HTTP ${res.status}`}`);
+  let lastError = 'No audio-capable models available';
+
+  // ── Strategy 1: Gemini Files API (recommended for audio) ─────────────────
+  try {
+    const fileUri = await uploadAudioFile(audioBlob, mimeType, onProgress);
+
+    if (fileUri) {
+      // Use uploaded file URI instead of inline base64
+      for (const model of AUDIO_MODELS) {
+        try {
+          const url = `${BASE_URL}/${model.version}/models/${model.name}:generateContent?key=${API_KEY}`;
+          const res = await fetch(url, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { file_data: { mime_type: mimeType, file_uri: fileUri } },
+                  { text: transcriptionPrompt },
+                ],
+              }],
+              generationConfig: { temperature: 0.0, maxOutputTokens: 8192 },
+            }),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            const msg = errBody?.error?.message ?? `HTTP ${res.status}`;
+            console.warn(`[Gemini Audio Files] ✗ ${model.name}: ${msg}`);
+            lastError = msg;
+            continue;
+          }
+
+          const data       = await res.json();
+          const transcript = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+
+          if (!transcript) {
+            lastError = 'Empty response from model';
+            console.warn(`[Gemini Audio Files] ✗ ${model.name}: empty response`);
+            continue;
+          }
+
+          console.info(`[Gemini Audio Files] ✅ Transcribed with ${model.name}`);
+          onProgress('تم استخراج النص ✅');
+          return { transcript, word_count: transcript.split(/\s+/).filter(Boolean).length };
+
+        } catch (e) {
+          lastError = e.message;
+          console.warn(`[Gemini Audio Files] ✗ ${model.name}: ${e.message}`);
+        }
+      }
+    }
+  } catch (uploadErr) {
+    console.warn('[Gemini Audio] Files API upload failed, trying inline:', uploadErr.message);
+    lastError = uploadErr.message;
   }
 
-  const data       = await res.json();
-  const transcript = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
-  if (!transcript) throw new Error('لم يُستخرج أي نص من الملف الصوتي.');
+  // ── Strategy 2: Inline base64 (fallback) ──────────────────────────────────
+  if (audioBlob.size <= 15 * 1024 * 1024) {
+    onProgress('جارٍ تحويل الصوت (طريقة بديلة)…');
+    const base64 = await blobToBase64(audioBlob);
 
-  onProgress('تم استخراج النص ✅');
-  return { transcript, word_count: transcript.split(/\s+/).filter(Boolean).length };
+    for (const model of AUDIO_MODELS) {
+      try {
+        const url = `${BASE_URL}/${model.version}/models/${model.name}:generateContent?key=${API_KEY}`;
+        const res = await fetch(url, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { inline_data: { mime_type: mimeType, data: base64 } },
+                { text: transcriptionPrompt },
+              ],
+            }],
+            generationConfig: { temperature: 0.0, maxOutputTokens: 8192 },
+          }),
+        });
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const msg = errBody?.error?.message ?? `HTTP ${res.status}`;
+          console.warn(`[Gemini Audio Inline] ✗ ${model.name}: ${msg}`);
+          lastError = msg;
+          continue;
+        }
+
+        const data       = await res.json();
+        const transcript = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+
+        if (!transcript) { lastError = 'Empty response'; continue; }
+
+        console.info(`[Gemini Audio Inline] ✅ Transcribed with ${model.name}`);
+        onProgress('تم استخراج النص ✅');
+        return { transcript, word_count: transcript.split(/\s+/).filter(Boolean).length };
+
+      } catch (e) {
+        lastError = e.message;
+        console.warn(`[Gemini Audio Inline] ✗ ${model.name}: ${e.message}`);
+      }
+    }
+  }
+
+  throw new Error(`فشل التحويل الصوتي: ${lastError}`);
 }
+
+
 
 // ── Helper: parse JSON from Gemini response ────────────────────────────────────
 function parseJSON(text, fallback) {
   try {
-    const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(clean);
+    // 1. Strip markdown code fences
+    let clean = text
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
+      .trim();
+
+    // 2. Try direct parse first
+    try { return JSON.parse(clean); } catch {}
+
+    // 3. Extract first JSON object {...} or array [...]
+    const objMatch   = clean.match(/\{[\s\S]*\}/);
+    const arrMatch   = clean.match(/\[[\s\S]*\]/);
+
+    // Pick whichever comes first in the text
+    const candidates = [objMatch, arrMatch]
+      .filter(Boolean)
+      .sort((a, b) => clean.indexOf(a[0]) - clean.indexOf(b[0]));
+
+    for (const match of candidates) {
+      try { return JSON.parse(match[0]); } catch {}
+    }
+
+    console.warn('[Gemini] parseJSON: could not extract JSON from:', clean.slice(0, 200));
+    return fallback;
   } catch {
     return fallback;
   }

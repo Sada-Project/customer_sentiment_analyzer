@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Icon from '../../../components/AppIcon';
 import { extractProblemAndSolution } from '../../../services/geminiService';
+import { getCachedPS, setCachedPS } from '../../../services/callDetailsService';
 
 // ── Config maps ───────────────────────────────────────────────────────────────
 const CATEGORY_CONFIG = {
@@ -29,7 +30,7 @@ const SOLUTION_TYPES = {
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
-const SentimentAlertFeed = ({ transcript = [], transcriptText = '', loading: parentLoading = false }) => {
+const SentimentAlertFeed = ({ transcript = [], transcriptText = '', loading: parentLoading = false, callId = null }) => {
   const [result,   setResult]   = useState(null);
   const [fetching, setFetching] = useState(false);
   const [fetchErr, setFetchErr] = useState(null);
@@ -56,8 +57,32 @@ const SentimentAlertFeed = ({ transcript = [], transcriptText = '', loading: par
   }, [buildText]);
 
   // Auto-run when transcript becomes available
+  // Delayed by 4s to stagger Gemini API calls (topics=0s, compliance=2s, this=4s)
   useEffect(() => {
-    if (!parentLoading) runAnalysis();
+    if (parentLoading) return;
+
+    // ✅ Load from localStorage cache first — instant, no Gemini call
+    if (callId) {
+      const cached = getCachedPS(callId);
+      if (cached) { setResult(cached); return; }
+    }
+
+    const timer = setTimeout(() => {
+      const text = buildText();
+      if (!text) return;
+      setFetching(true);
+      setFetchErr(null);
+      setResult(null);
+      extractProblemAndSolution(text)
+        .then(r => {
+          setResult(r);
+          // 💾 Cache to localStorage for next visit
+          if (r && callId) setCachedPS(callId, r);
+        })
+        .catch(e => setFetchErr(e.message ?? 'Analysis failed'))
+        .finally(() => setFetching(false));
+    }, 4000);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, transcriptText, parentLoading]);
 
@@ -113,11 +138,13 @@ const SentimentAlertFeed = ({ transcript = [], transcriptText = '', loading: par
         </div>
       )}
 
-      {/* ── No transcript ── */}
+      {/* ── No result ── */}
       {!fetching && !parentLoading && !fetchErr && !result && (
         <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
           <Icon name="MessageSquareOff" size={30} className="text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No transcript available to analyze</p>
+          <p className="text-sm text-muted-foreground">
+            {buildText() ? 'No issues detected in this call' : 'No transcript available to analyze'}
+          </p>
         </div>
       )}
 
