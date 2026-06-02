@@ -3,9 +3,9 @@ import Icon from '../../../components/AppIcon';
 
 // Role filter options
 const ROLE_OPTIONS = [
-  { value: 'all',   label: 'جميع الأدوار' },
-  { value: 'admin', label: 'Admin'         },
-  { value: 'agent', label: 'Agent'         },
+  { value: 'all',   label: 'All Roles' },
+  { value: 'admin', label: 'Admin'     },
+  { value: 'agent', label: 'Agent'     },
 ];
 
 const ActionToolbar = ({ onSearch, onRoleFilter, onAddUser }) => {
@@ -23,7 +23,7 @@ const ActionToolbar = ({ onSearch, onRoleFilter, onAddUser }) => {
             />
             <input
               type="text"
-              placeholder="البحث عن مستخدم..."
+              placeholder="Search for a user..."
               onChange={(e) => onSearch?.(e?.target?.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
             />
@@ -47,7 +47,7 @@ const ActionToolbar = ({ onSearch, onRoleFilter, onAddUser }) => {
           className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap"
         >
           <Icon name="UserPlus" size={16} />
-          <span>إضافة مستخدم</span>
+          <span>Add User</span>
         </button>
       </div>
     </div>

@@ -6,17 +6,17 @@ import Button from '../../../components/ui/Button';
 
 // Role options
 const ROLE_OPTIONS = [
-  { value: 'admin', label: 'Admin — مدير النظام' },
-  { value: 'agent', label: 'Agent — وكيل' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'agent', label: 'Agent' },
 ];
 
 // Department options (matches departments.code in DB)
 const DEPT_OPTIONS = [
-  { value: '',          label: 'بدون قسم' },
-  { value: 'support',   label: 'Customer Support — دعم العملاء' },
-  { value: 'technical', label: 'Technical Support — الدعم التقني' },
-  { value: 'sales',     label: 'Sales — المبيعات' },
-  { value: 'billing',   label: 'Billing — الفوترة' },
+  { value: '',          label: 'No Department' },
+  { value: 'support',   label: 'Customer Support' },
+  { value: 'technical', label: 'Technical Support' },
+  { value: 'sales',     label: 'Sales' },
+  { value: 'billing',   label: 'Billing' },
 ];
 
 // Common job titles
@@ -86,24 +86,24 @@ const UserModal = ({ user, onSave, onClose }) => {
     const newErrors = {};
 
     if (!formData?.full_name?.trim()) {
-      newErrors.full_name = 'الاسم الكامل مطلوب';
+      newErrors.full_name = 'Full name is required';
     }
     if (!formData?.email?.trim()) {
-      newErrors.email = 'البريد الإلكتروني مطلوب';
+      newErrors.email = 'Email address is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData?.email)) {
-      newErrors.email = 'صيغة البريد الإلكتروني غير صحيحة';
+      newErrors.email = 'Invalid email address format';
     }
     if (!user && !formData?.password) {
-      newErrors.password = 'كلمة المرور مطلوبة للمستخدمين الجدد';
+      newErrors.password = 'Password is required for new users';
     }
     if (formData?.password && formData?.password?.length < 8) {
-      newErrors.password = 'يجب أن تكون كلمة المرور 8 أحرف على الأقل';
+      newErrors.password = 'Password must be at least 8 characters';
     }
     if (formData?.password && formData?.password !== formData?.confirmPassword) {
-      newErrors.confirmPassword = 'كلمتا المرور غير متطابقتين';
+      newErrors.confirmPassword = 'Passwords do not match';
     }
     if (!formData?.role) {
-      newErrors.role = 'يرجى اختيار الدور';
+      newErrors.role = 'Please select a role';
     }
 
     setErrors(newErrors);
@@ -140,7 +140,7 @@ const UserModal = ({ user, onSave, onClose }) => {
               <Icon name={user ? 'UserCog' : 'UserPlus'} size={18} color="var(--color-primary)" />
             </div>
             <h2 className="text-lg font-semibold text-foreground">
-              {user ? 'تعديل المستخدم' : 'إضافة مستخدم جديد'}
+              {user ? 'Edit User' : 'Add New User'}
             </h2>
           </div>
           <button
@@ -157,14 +157,14 @@ const UserModal = ({ user, onSave, onClose }) => {
           {/* Full Name */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              الاسم الكامل <span className="text-destructive">*</span>
+              Full Name <span className="text-destructive">*</span>
             </label>
             <input
               type="text"
               name="full_name"
               value={formData?.full_name}
               onChange={handleChange}
-              placeholder="أدخل الاسم الكامل"
+              placeholder="Enter full name"
               className="w-full px-3 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-sm"
             />
             {errors?.full_name && (
@@ -175,7 +175,7 @@ const UserModal = ({ user, onSave, onClose }) => {
           {/* Email */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              البريد الإلكتروني <span className="text-destructive">*</span>
+              Email Address <span className="text-destructive">*</span>
             </label>
             <input
               type="email"
@@ -190,20 +190,20 @@ const UserModal = ({ user, onSave, onClose }) => {
               <p className="mt-1 text-xs text-destructive">{errors?.email}</p>
             )}
             {user && (
-              <p className="mt-1 text-xs text-muted-foreground">لا يمكن تغيير البريد الإلكتروني.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Email address cannot be changed.</p>
             )}
           </div>
 
           {/* Role — uses custom Select */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              الدور <span className="text-destructive">*</span>
+              Role <span className="text-destructive">*</span>
             </label>
             <Select
               options={ROLE_OPTIONS}
               value={formData?.role}
               onChange={handleRoleChange}
-              placeholder="اختر الدور..."
+              placeholder="Select a role..."
               className="w-full"
             />
             {errors?.role && (
@@ -215,16 +215,16 @@ const UserModal = ({ user, onSave, onClose }) => {
           {user && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
-                المسمى الوظيفي
+                Job Title
               </label>
               <Select
                 options={ROLE_TITLE_OPTIONS}
                 value={formData?.role_title}
                 onChange={handleRoleTitleChange}
-                placeholder="اختر المسمى الوظيفي..."
+                placeholder="Select a job title..."
                 className="w-full"
               />
-              <p className="mt-1 text-xs text-muted-foreground">يظهر في صفحة Agent Performance</p>
+              <p className="mt-1 text-xs text-muted-foreground">Shown on the Agent Performance page</p>
             </div>
           )}
 
@@ -232,13 +232,13 @@ const UserModal = ({ user, onSave, onClose }) => {
           {user && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
-                القسم
+                Department
               </label>
               <Select
                 options={DEPT_OPTIONS}
                 value={formData?.department_code}
                 onChange={handleDeptChange}
-                placeholder="اختر القسم..."
+                placeholder="Select a department..."
                 className="w-full"
               />
             </div>
@@ -247,9 +247,9 @@ const UserModal = ({ user, onSave, onClose }) => {
           {/* Password */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              كلمة المرور{' '}
+              Password{' '}
               {user
-                ? <span className="text-muted-foreground text-xs font-normal">(اتركها فارغة للإبقاء على الحالية)</span>
+                ? <span className="text-muted-foreground text-xs font-normal">(leave blank to keep current)</span>
                 : <span className="text-destructive">*</span>
               }
             </label>
@@ -269,7 +269,7 @@ const UserModal = ({ user, onSave, onClose }) => {
           {/* Confirm Password */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              تأكيد كلمة المرور{' '}
+              Confirm Password{' '}
               {(!user || formData?.password) && <span className="text-destructive">*</span>}
             </label>
             <input
@@ -291,7 +291,7 @@ const UserModal = ({ user, onSave, onClose }) => {
               <div className="flex items-start gap-2">
                 <Icon name="Info" size={16} className="text-primary mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  سيتم إنشاء الحساب مباشرةً في النظام. يمكن للمستخدم تسجيل الدخول فور الإنشاء.
+                  The account will be created immediately in the system. The user can sign in as soon as the account is created.
                 </p>
               </div>
             </div>
@@ -304,7 +304,7 @@ const UserModal = ({ user, onSave, onClose }) => {
               onClick={onClose}
               className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
-              إلغاء
+              Cancel
             </button>
             <button
               type="submit"
@@ -314,10 +314,10 @@ const UserModal = ({ user, onSave, onClose }) => {
               {saving ? (
                 <>
                   <Icon name="Loader2" size={16} className="animate-spin" />
-                  جارٍ الحفظ…
+                  Saving…
                 </>
               ) : (
-                user ? 'حفظ التغييرات' : 'إضافة المستخدم'
+                user ? 'Save Changes' : 'Add User'
               )}
             </button>
           </div>

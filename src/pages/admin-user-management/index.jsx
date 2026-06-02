@@ -216,7 +216,7 @@ const AdminUserManagement = () => {
           ));
           showToast('Account activated successfully.', 'success');
         } catch (err) {
-          showToast(`خطأ: ${err.message}`, 'error');
+          showToast(`Error: ${err.message}`, 'error');
         }
       })();
     }
@@ -256,7 +256,7 @@ const AdminUserManagement = () => {
         showToast('User account created successfully.', 'success');
       }
     } catch (err) {
-      showToast(`خطأ: ${err.message}`, 'error');
+      showToast(`Error: ${err.message}`, 'error');
     } finally {
       setIsModalOpen(false);
     }
