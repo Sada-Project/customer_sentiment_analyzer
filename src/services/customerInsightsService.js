@@ -210,34 +210,32 @@ export async function fetchTopicFrequency(hoursBack = null) {
     : 50;
   const scale = globalRawAvg <= 1 ? 100 : 1; // 0-1 → multiply by 100
 
-  // Proportional slice size for topics with no keyword match
-  const sliceSize = Math.max(1, Math.floor(completedCalls.length / topicRows.length));
+  // Only include topics that have REAL keyword matches in transcripts/summaries.
+  // Skip the old "proportional slice" fallback — it was creating dozens of
+  // ghost neutral bubbles for every unmatched topic.
+  const matched = topicRows
+    .map(topic => {
+      const keyword = topic.name.toLowerCase();
+      const matchingCalls = completedCalls.filter(call => {
+        const haystack = [call.ai_summary ?? '', call.transcript_text ?? ''].join(' ').toLowerCase();
+        return haystack.includes(keyword);
+      });
 
-  return topicRows.map((topic, idx) => {
-    const keyword = topic.name.toLowerCase();
-    const matchingCalls = completedCalls.filter(call => {
-      const haystack = [call.ai_summary ?? '', call.transcript_text ?? ''].join(' ').toLowerCase();
-      return haystack.includes(keyword);
-    });
+      if (!matchingCalls.length) return null; // skip — no real data
 
-    // For topics with no keyword match, give them a proportional slice
-    // so every topic gets a distinct position (not the same global average)
-    const sourceCalls = matchingCalls.length > 0
-      ? matchingCalls
-      : completedCalls.slice(idx * sliceSize, idx * sliceSize + sliceSize);
+      const callsWithScale = matchingCalls.map(c => ({
+        ...c,
+        sentiment_score: Number(c.sentiment_score ?? 0.5) * scale,
+      }));
 
-    const callsWithScale = sourceCalls.map(c => ({
-      ...c,
-      sentiment_score: Number(c.sentiment_score ?? 0.5) * scale,
-    }));
+      const result = buildResult(topic, callsWithScale);
+      return result ? { ...result, call_count: matchingCalls.length } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.call_count - a.call_count);
 
-    return buildResult(topic, callsWithScale.length ? callsWithScale : [{ sentiment: 'neutral', sentiment_score: 50 }])
-      ? {
-          ...buildResult(topic, callsWithScale.length ? callsWithScale : [{ sentiment: 'neutral', sentiment_score: 50 }]),
-          call_count: matchingCalls.length || 1,
-        }
-      : null;
-  }).filter(Boolean).sort((a, b) => b.call_count - a.call_count);
+  // Cap at top 12 so the chart stays readable
+  return matched.slice(0, 12);
 }
 
 // ─── Keyword Word Cloud ───────────────────────────────────────────────────────
@@ -296,17 +294,25 @@ export async function fetchRisingTopics(limit = 5) {
     .order('created_at', { ascending: false })
     .limit(1000);
 
-  // ── 3. If no recent calls, fall back to all-time calls ──────────────────
-  const { data: allCallRows } = (!callRows?.length) ? await supabase
+  // ── 3. Always fetch all-time calls (needed for junction-table lookup) ────
+  // Junction table (call_topics) may reference call_ids older than 24 h;
+  // without an all-time pool those IDs would silently disappear from callMap.
+  const { data: allCallRows } = await supabase
     .from('call_recordings')
     .select('id, sentiment, sentiment_score, ai_summary, transcript_text, processed_at, created_at')
     .eq('status', 'completed')
     .order('created_at', { ascending: false })
-    .limit(500)
-    : { data: null };
+    .limit(500);
 
-  const allCalls     = callRows?.length ? callRows : (allCallRows ?? []);
-  const usingAllTime = !callRows?.length;
+  const recentCalls  = callRows  ?? [];
+  const historicPool = allCallRows ?? [];
+
+  // allCalls = union, deduplicated by id (recent first)
+  const allCallsMap = {};
+  for (const c of [...historicPool, ...recentCalls]) allCallsMap[c.id] = c;
+  const allCalls = Object.values(allCallsMap);
+
+  const usingAllTime = recentCalls.length === 0;
 
   if (!allCalls.length) return [];
 
@@ -316,9 +322,8 @@ export async function fetchRisingTopics(limit = 5) {
     .select('topic_id, call_id')
     .limit(5000);
 
-  // Build call_id → call map for quick lookup
-  const callMap = {};
-  for (const c of allCalls) callMap[c.id] = c;
+  // Build call_id → call map for quick lookup (covers all-time pool)
+  const callMap = allCallsMap;
 
   // Group by topic via junction if data exists
   const jGrouped = {};
@@ -370,17 +375,18 @@ export async function fetchRisingTopics(limit = 5) {
       : 0;
 
     return { topic, count: matchedCalls.length, recentCount, timeframe, urgency };
-  }).filter(Boolean).filter(s => s.recentCount > 0);
+  }).filter(Boolean);
 
-  if (!stats.length) {
-    // Last resort: return all-matched even if count is 0 in recent window
-    return [];
-  }
+  // If no topic has activity in any recent window, keep them all (all-time fallback)
+  const activeStats = stats.filter(s => s.recentCount > 0);
+  const finalStats  = activeStats.length > 0 ? activeStats : stats;
+
+  if (!finalStats.length) return [];
 
   // ── 6. Score & map severity ─────────────────────────────────────────────
-  const maxCount = Math.max(...stats.map(s => s.recentCount));
+  const maxCount = Math.max(...finalStats.map(s => s.recentCount));
 
-  const scored = stats.map(s => {
+  const scored = finalStats.map(s => {
     const freqScore     = maxCount > 0 ? (s.recentCount / maxCount) * 100 : 0;
     const urgScore      = s.urgency * 100;
     const rawScore      = freqScore * 0.5 + urgScore * 0.5;

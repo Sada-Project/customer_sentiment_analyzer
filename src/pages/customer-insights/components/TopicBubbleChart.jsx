@@ -24,15 +24,18 @@ function mapTopicToChartPoint(row, index, total) {
   const category  = (row.topics?.category ?? 'service').toLowerCase();
 
   const baseX  = CATEGORY_X[category] ?? 50;
-  const spread = total > 1 ? (index / (total - 1)) * 40 - 20 : 0;
-  const x      = Math.min(92, Math.max(8, baseX + spread));
+  // Use a deterministic jitter derived from the topic name so positions
+  // are stable across renders but each topic gets a unique spread.
+  const jitter = ((topicName.charCodeAt(0) ?? 65) % 30) - 15;
+  const spread = total > 1 ? ((index / (total - 1)) * 60) - 30 : 0;
+  const x      = Math.min(95, Math.max(5, baseX + spread * 0.4 + jitter));
 
   const rawScore = row.avg_sentiment_score ?? row.avg_score;
   let y = 50;
   if (rawScore != null) {
     const n = Number(rawScore);
     const scaled = n <= 1 ? n * 100 : n;
-    y = Math.min(92, Math.max(8, Math.round(scaled)));
+    y = Math.min(95, Math.max(5, Math.round(scaled)));
   } else {
     y = Math.round(90 - (index / Math.max(total - 1, 1)) * 80);
   }
@@ -74,7 +77,7 @@ const TopicBubbleChart = () => {
   }, []);
 
   const topicData = topics.length > 0
-    ? topics.map((row, i) => mapTopicToChartPoint(row, i, topics.length))
+    ? topics.slice(0, 12).map((row, i, arr) => mapTopicToChartPoint(row, i, arr.length))
     : (!loading ? FALLBACK_DATA : []);
 
   const CustomTooltip = ({ active, payload }) => {
